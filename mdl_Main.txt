@@ -1,0 +1,164 @@
+Attribute VB_Name = "mdl_Main"
+Option Explicit
+
+' ========================================
+' 모듈: mdl_Main
+' 설명: 메인 실행 및 통합 관리
+' ========================================
+
+' 메인 실행 (UserForm 열기)
+Public Sub 실행_데이터취합및분류()
+    ' 설정 시트 확인
+    If Not CheckRequiredSheets() Then
+        If MsgBox("필수 설정 시트가 없습니다. 지금 생성하시겠습니까?", vbQuestion + vbYesNo) = vbYes Then
+            Call mdl_Settings.CreateInitialSheets
+        Else
+            Exit Sub
+        End If
+    End If
+    
+    ' UserForm 열기
+    frmMain.Show
+End Sub
+
+' 필수 시트 확인
+Private Function CheckRequiredSheets() As Boolean
+    On Error Resume Next
+    
+    Dim ws As Worksheet
+    Dim required As Boolean
+    
+    required = True
+    
+    Set ws = ThisWorkbook.Sheets(SHEET_브랜드설정)
+    If ws Is Nothing Then required = False
+    
+    Set ws = ThisWorkbook.Sheets(SHEET_매장설정)
+    If ws Is Nothing Then required = False
+    
+    Set ws = ThisWorkbook.Sheets(SHEET_시스템설정)
+    If ws Is Nothing Then required = False
+    
+    CheckRequiredSheets = required
+End Function
+
+' 설정 초기화 (관리자용)
+Public Sub 설정초기화()
+    If MsgBox("모든 설정을 초기화하시겠습니까?" & vbCrLf & _
+              "기존 설정 시트가 삭제됩니다.", vbQuestion + vbYesNo) = vbNo Then
+        Exit Sub
+    End If
+    
+    On Error Resume Next
+    
+    Application.DisplayAlerts = False
+    
+    ThisWorkbook.Sheets(SHEET_브랜드설정).Delete
+    ThisWorkbook.Sheets(SHEET_매장설정).Delete
+    ThisWorkbook.Sheets(SHEET_시스템설정).Delete
+    
+    Application.DisplayAlerts = True
+    
+    Call mdl_Settings.CreateInitialSheets
+End Sub
+
+' 누적 데이터 요약 보고서 (단독 실행)
+Public Sub 누적데이터요약보고서()
+    On Error GoTo ErrorHandler
+    
+    Dim wsAccum As Worksheet
+    
+    ' 누적데이터 시트 확인
+    On Error Resume Next
+    Set wsAccum = ThisWorkbook.Sheets(SHEET_누적데이터)
+    On Error GoTo ErrorHandler
+    
+    If wsAccum Is Nothing Then
+        MsgBox "누적 데이터가 없습니다." & vbCrLf & _
+               "먼저 데이터 취합을 실행하세요.", vbExclamation
+        Exit Sub
+    End If
+    
+    If wsAccum.Cells(wsAccum.Rows.Count, 1).End(xlUp).Row < 2 Then
+        MsgBox "누적 데이터가 비어있습니다.", vbExclamation
+        Exit Sub
+    End If
+    
+    ' 모듈명 명시하여 호출
+    Call mdl_SUMMARY.CreateAccumulatedSummary
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "오류 발생: " & Err.Description, vbCritical
+End Sub
+
+' 전체 초기화 (주의!)
+Public Sub 전체데이터초기화()
+    If MsgBox("?? 경고 ??" & vbCrLf & vbCrLf & _
+              "통합시트, 기초데이터, 누적데이터가 모두 삭제됩니다." & vbCrLf & _
+              "정말로 초기화하시겠습니까?", vbCritical + vbYesNo) = vbNo Then
+        Exit Sub
+    End If
+    
+    If MsgBox("정말 확실합니까? 이 작업은 되돌릴 수 없습니다!", vbExclamation + vbYesNo) = vbNo Then
+        Exit Sub
+    End If
+    
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    
+    ThisWorkbook.Sheets(SHEET_통합).Delete
+    ThisWorkbook.Sheets(SHEET_기초).Delete
+    ThisWorkbook.Sheets(SHEET_누적데이터).Delete
+    ThisWorkbook.Sheets("누적데이터요약").Delete
+    
+    Application.DisplayAlerts = True
+    
+    MsgBox "초기화가 완료되었습니다.", vbInformation
+End Sub
+
+' 도움말
+Public Sub 사용가이드()
+    Dim msg As String
+    
+    msg = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" & vbCrLf
+    msg = msg & "  판매 데이터 통합 시스템 v2.0" & vbCrLf
+    msg = msg & "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" & vbCrLf & vbCrLf
+    
+    msg = msg & "?? 주요 기능:" & vbCrLf
+    msg = msg & "1. 다중 파일 취합 + 매장별 구분" & vbCrLf
+    msg = msg & "2. 브랜드별 자동 분류 및 파일 생성" & vbCrLf
+    msg = msg & "3. 요약 시트 자동 생성" & vbCrLf
+    msg = msg & "4. 누적 데이터 자동 병합" & vbCrLf & vbCrLf
+    
+    msg = msg & "?? 사용 순서:" & vbCrLf
+    msg = msg & "1. [실행_데이터취합및분류] 매크로 실행" & vbCrLf
+    msg = msg & "2. 파일 추가 후 매장 선택" & vbCrLf
+    msg = msg & "3. [시작] 버튼 클릭" & vbCrLf
+    msg = msg & "4. 자동 완료!" & vbCrLf & vbCrLf
+    
+    msg = msg & "?? 설정 시트:" & vbCrLf
+    msg = msg & "? 브랜드설정: 통합 브랜드 관리" & vbCrLf
+    msg = msg & "? 매장설정: 판매 매장 관리" & vbCrLf
+    msg = msg & "? 시스템설정: 경로, 파일명 등" & vbCrLf & vbCrLf
+    
+    msg = msg & "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    MsgBox msg, vbInformation, "사용 가이드"
+End Sub
+
+' 버전 정보
+Public Sub 버전정보()
+    MsgBox "판매 데이터 통합 시스템" & vbCrLf & vbCrLf & _
+           "Version: 2.0" & vbCrLf & _
+           "Build: 2025-10-10" & vbCrLf & vbCrLf & _
+           "주요 기능:" & vbCrLf & _
+           "? 다중 파일 처리" & vbCrLf & _
+           "? 매장별 구분" & vbCrLf & _
+           "? 브랜드별 자동 분류" & vbCrLf & _
+           "? 요약 시트 생성" & vbCrLf & _
+           "? 누적 데이터 관리", _
+           vbInformation, "버전 정보"
+End Sub
+

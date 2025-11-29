@@ -1,0 +1,301 @@
+Attribute VB_Name = "Module5"
+Option Explicit
+
+' ========================================
+' 설정 기반 데이터 처리 시스템
+' ========================================
+
+' === 설정값 캐시 (성능 최적화) ===
+Private configCache As Object
+
+' 설정 캐시 초기화
+Private Sub InitConfigCache()
+    If configCache Is Nothing Then
+        Set configCache = CreateObject("Scripting.Dictionary")
+    End If
+End Sub
+
+' 설정값 가져오기 (캐시 사용)
+Public Function GetConfigValue(settingName As String, Optional DefaultValue As Variant = "") As Variant
+    InitConfigCache
+    
+    ' 캐시에 있으면 반환
+    If configCache.exists(settingName) Then
+        GetConfigValue = configCache(settingName)
+        Exit Function
+    End If
+    
+    ' 없으면 시트에서 읽기
+    On Error GoTo UseDefault
+    
+    Dim ws As Worksheet
+    Dim lastRow As Long
+    Dim i As Long
+    Dim foundValue As Variant
+    
+    Set ws = ThisWorkbook.Sheets("시스템설정")
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    
+    For i = 2 To lastRow
+        If ws.Cells(i, 1).value = settingName Then
+            foundValue = ws.Cells(i, 2).value
+            
+            ' 캐시에 저장
+            configCache.Add settingName, foundValue
+            GetConfigValue = foundValue
+            Exit Function
+        End If
+    Next i
+    
+UseDefault:
+    ' 설정이 없으면 기본값
+    GetConfigValue = DefaultValue
+    configCache.Add settingName, DefaultValue
+End Function
+
+' 설정값 캐시 초기화 (설정 변경 시 호출)
+Public Sub ClearConfigCache()
+    Set configCache = Nothing
+End Sub
+
+' 디버그 로그 출력
+Private Sub DebugLog(msg As String)
+    If GetConfigValue("디버그모드", "X") = "O" Then
+        Debug.Print Format(Now, "HH:mm:ss") & " | " & msg
+    End If
+End Sub
+
+' ========================================
+' 수정된 데이터 취합 처리
+' ========================================
+
+' 단일 파일 처리 (설정 기반)
+Public Sub ProcessSingleFile_ConfigBased(filePath As String, storeName As String, wsDest As Worksheet)
+    On Error GoTo ErrorHandler
+    
+    Dim wbSource As Workbook
+    Dim wsSource As Worksheet
+    Dim lastRow As Long, lastRowDest As Long
+    Dim sheetDate As Date
+    Dim i As Long
+    
+    ' === 설정값 읽기 ===
+    Dim extLastCol As Long
+    Dim dateFormat As String
+    
+    extLastCol = CLng(GetConfigValue("외부_마지막열", "9"))
+    dateFormat = GetConfigValue("시트명날짜형식", "MM.DD")
+    
+    DebugLog "파일 열기: " & Dir(filePath)
+    Set wbSource = Workbooks.Open(filePath)
+    
+    ' === 각 시트 처리 ===
+    For Each wsSource In wbSource.Sheets
+        DebugLog "  시트 처리: " & wsSource.Name
+        
+        ' 날짜 변환
+        sheetDate = ConvertSheetNameToDate(wsSource.Name, dateFormat)
+        
+        ' 데이터 복사
+        lastRow = wsSource.Cells(wsSource.Rows.Count, extLastCol).End(xlUp).Row
+        
+        If lastRow > 1 Then
+            lastRowDest = wsDest.Cells(wsDest.Rows.Count, 3).End(xlUp).Row + 1
+            
+            ' C열부터 복사 (A:판매일, B:매장 예약)
+            wsSource.Range(wsSource.Cells(2, 1), wsSource.Cells(lastRow, extLastCol)).Copy
+            wsDest.Cells(lastRowDest, 3).PasteSpecial Paste:=xlPasteValues
+            
+            ' A열: 판매일
+            For i = lastRowDest To lastRowDest + (lastRow - 2)
+                wsDest.Cells(i, 1).value = sheetDate
+            Next i
+            
+            ' B열: 판매매장
+            wsDest.Range("B" & lastRowDest & ":B" & lastRowDest + (lastRow - 2)).value = storeName
+            
+            DebugLog "    → " & (lastRow - 1) & "건 복사완료"
+        End If
+    Next wsSource
+    
+    wbSource.Close False
+    DebugLog "파일 닫기: " & Dir(filePath)
+    Exit Sub
+    
+ErrorHandler:
+    DebugLog "? 오류: " & Err.Description
+    If Not wbSource Is Nothing Then wbSource.Close False
+    Err.Raise Err.Number, , Err.Description
+End Sub
+
+' 시트명 → 날짜 변환
+Private Function ConvertSheetNameToDate(sheetName As String, formatType As String) As Date
+    On Error Resume Next
+    
+    Dim formattedDate As String
+    formattedDate = Replace(sheetName, ".", "/")
+    
+    ' MM.DD 형식
+    If formatType = "MM.DD" Then
+        ConvertSheetNameToDate = DateSerial(Year(Date), _
+                                           CInt(Split(formattedDate, "/")(0)), _
+                                           CInt(Split(formattedDate, "/")(1)))
+    End If
+    
+    ' 변환 실패 시 오늘 날짜
+    If Err.Number <> 0 Then
+        ConvertSheetNameToDate = Date
+    End If
+End Function
+
+' ========================================
+' 수정된 브랜드 추출 (설정 기반)
+' ========================================
+
+Public Sub FinalizeDestSheet_ConfigBased(ws As Worksheet)
+    Dim lastRow As Long
+    Dim brandCell As Range
+    Dim brandText As String
+    Dim i As Long
+    
+    ' === 설정값 읽기 ===
+    Dim colBrand As Long        ' 브랜드 삽입 위치
+    Dim colProductName As Long  ' 상품명 위치 (삽입 후)
+    Dim colQty As Long          ' 판매수량 위치 (삽입 후)
+    Dim extractMethod As String ' 브랜드 추출 방식
+    Dim delimiter As String     ' 구분자
+    
+    colBrand = CLng(GetConfigValue("통합_브랜드열", "3"))
+    colProductName = CLng(GetConfigValue("통합_상품명열", "5"))
+    colQty = CLng(GetConfigValue("통합_판매수량열", "8"))
+    extractMethod = GetConfigValue("브랜드추출방식", "첫단어")
+    delimiter = GetConfigValue("브랜드구분자", " ")
+    
+    DebugLog "=== 브랜드 추출 시작 ==="
+    DebugLog "브랜드열: " & colBrand & ", 상품명열: " & colProductName
+    
+    ' === C열에 브랜드 삽입 ===
+    ws.Columns(colBrand).Insert Shift:=xlToRight
+    ws.Cells(1, colBrand).value = "브랜드"
+    
+    ' === 마지막 행 찾기 ===
+    lastRow = ws.Cells(ws.Rows.Count, colProductName).End(xlUp).Row
+    DebugLog "마지막 행: " & lastRow
+    
+    ' === 헤더 확인 (디버그) ===
+    If GetConfigValue("디버그모드", "X") = "O" Then
+        Debug.Print "헤더 정보:"
+        For i = 1 To 12
+            Debug.Print "  " & Chr(64 + i) & "열(" & i & "): " & ws.Cells(1, i).value
+        Next i
+    End If
+    
+    ' === 브랜드명 추출 ===
+    For Each brandCell In ws.Range(ws.Cells(2, colProductName), ws.Cells(lastRow, colProductName))
+        If brandCell.value <> "" Then
+            brandText = ExtractBrandName(CStr(brandCell.value), extractMethod, delimiter)
+            ws.Cells(brandCell.Row, colBrand).value = brandText
+            
+            ' 처음 3개만 로그
+            If brandCell.Row <= 4 And GetConfigValue("디버그모드", "X") = "O" Then
+                Debug.Print brandCell.Row & "행: [" & brandCell.value & "] → [" & brandText & "]"
+            End If
+        End If
+    Next brandCell
+    
+    ' === 판매수량 숫자 변환 ===
+    ws.Range(ws.Cells(2, colQty), ws.Cells(lastRow, colQty)).NumberFormat = "0"
+    ws.Range(ws.Cells(2, colQty), ws.Cells(lastRow, colQty)).value = _
+        ws.Range(ws.Cells(2, colQty), ws.Cells(lastRow, colQty)).value
+    
+    ' === 헤더 서식 ===
+    ws.Range("A1:L1").Font.Bold = True
+    ws.Range("A1:L1").Interior.color = RGB(68, 114, 196)
+    ws.Range("A1:L1").Font.color = RGB(255, 255, 255)
+    ws.Range("A1:L1").HorizontalAlignment = xlCenter
+    
+    ' === 자동 맞춤 ===
+    ws.Cells.EntireColumn.AutoFit
+    
+    DebugLog "=== 브랜드 추출 완료 ==="
+End Sub
+
+' 브랜드명 추출 함수
+Private Function ExtractBrandName(productName As String, method As String, delimiter As String) As String
+    On Error Resume Next
+    
+    Select Case method
+        Case "첫단어"
+            ExtractBrandName = Split(productName, delimiter)(0)
+        
+        Case "전체"
+            ExtractBrandName = productName
+        
+        Case "구분자"
+            ' 첫 번째 구분자까지
+            Dim pos As Long
+            pos = InStr(productName, delimiter)
+            If pos > 0 Then
+                ExtractBrandName = Left(productName, pos - 1)
+            Else
+                ExtractBrandName = productName
+            End If
+        
+        Case Else
+            ExtractBrandName = Split(productName, " ")(0)
+    End Select
+    
+    ' 공백 제거
+    ExtractBrandName = Trim(ExtractBrandName)
+End Function
+
+' ========================================
+' 설정 검증 (실행 전 체크)
+' ========================================
+
+Public Function ValidateConfig() As Boolean
+    On Error GoTo ConfigError
+    
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets("시스템설정")
+    
+    ' 필수 설정 확인
+    Dim required As Variant
+    required = Array("외부_상품명열", "통합_브랜드열", "통합_상품명열", "기본저장경로")
+    
+    Dim item As Variant
+    For Each item In required
+        If GetConfigValue(CStr(item)) = "" Then
+            MsgBox "? 필수 설정이 누락되었습니다: " & item, vbCritical
+            ValidateConfig = False
+            Exit Function
+        End If
+    Next item
+    
+    ValidateConfig = True
+    Exit Function
+    
+ConfigError:
+    MsgBox "? 시스템설정 시트가 없습니다!" & vbCrLf & _
+           "Alt+F8 → '시스템설정시트_생성' 실행", vbCritical
+    ValidateConfig = False
+End Function
+
+' ========================================
+' 설정 내보내기/가져오기 (백업용)
+' ========================================
+
+Public Sub 설정내보내기()
+    ' 설정시트를 별도 파일로 저장
+    Dim savePath As String
+    savePath = GetConfigValue("기본저장경로", "C:\") & "시스템설정백업_" & Format(Date, "yymmdd") & ".xlsx"
+    
+    Dim wb As Workbook
+    Set wb = Workbooks.Add
+    ThisWorkbook.Sheets("시스템설정").Copy Before:=wb.Sheets(1)
+    wb.SaveAs savePath, FileFormat:=xlOpenXMLWorkbook
+    wb.Close
+    
+    MsgBox "설정이 저장되었습니다:" & vbCrLf & savePath, vbInformation
+End Sub
+

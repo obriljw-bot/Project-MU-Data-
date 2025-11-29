@@ -1,0 +1,58 @@
+Attribute VB_Name = "mdl_Constants"
+Option Explicit
+
+' ========================================
+' 모듈: mdl_Constants
+' 설명: 전역 상수 정의
+' ========================================
+
+' === 통합시트 컬럼 정의 ===
+Public Const COL_판매일 As Long = 1        ' A
+Public Const COL_판매매장 As Long = 2      ' B
+Public Const COL_브랜드 As Long = 3        ' C
+Public Const COL_판매량 As Long = 4        ' D
+Public Const COL_상품코드 As Long = 5      ' E
+Public Const COL_상품명 As Long = 6        ' F
+Public Const COL_단가 As Long = 7          ' G (추정)
+Public Const COL_판매금액 As Long = 9      ' I
+
+' === 열 이름 정의 ===
+Public Const HEADER_판매일 As String = "판매일"
+Public Const HEADER_판매매장 As String = "판매매장"
+Public Const HEADER_브랜드 As String = "브랜드"
+Public Const HEADER_판매량 As String = "판매량"
+Public Const HEADER_상품명 As String = "상품명"
+Public Const HEADER_판매금액 As String = "판매금액"
+
+' === 시트 이름 ===
+Public Const SHEET_통합 As String = "통합시트"
+Public Const SHEET_기초 As String = "기초데이터"
+Public Const SHEET_브랜드설정 As String = "브랜드설정"
+Public Const SHEET_매장설정 As String = "매장설정"
+Public Const SHEET_시스템설정 As String = "시스템설정"
+Public Const SHEET_누적데이터 As String = "누적데이터"
+
+' === 설정 항목 키 ===
+Public Const SET_기본경로 As String = "기본저장경로"
+Public Const SET_파일접두어 As String = "파일명접두어"
+Public Const SET_파일접미어 As String = "파일명접미어"
+Public Const SET_요약시트 As String = "요약시트생성"
+Public Const SET_중복검증 As String = "중복검증"
+Public Const SET_진행표시 As String = "진행표시"
+
+' === 기본값 ===
+Public Const DEFAULT_FOLDER As String = "E:\원브릿지\거래처\미미라인\매출데이터\판매데이터"
+Public Const FILE_PREFIX As String = "원브릿지_"
+Public Const FILE_SUFFIX As String = "_판매현황_"
+
+' === 새로운 설정 항목 키 ===
+Public Const SET_외부상품명열 As String = "외부_상품명열"
+Public Const SET_외부파일마지막열 As String = "외부_마지막열"
+Public Const SET_통합브랜드열 As String = "통합_브랜드열"
+Public Const SET_통합상품명열 As String = "통합_상품명열"
+Public Const SET_통합판매수량열 As String = "통합_판매수량열"
+Public Const SET_브랜드추출방식 As String = "브랜드추출방식"
+Public Const SET_브랜드구분자 As String = "브랜드구분자"
+Public Const SET_디버그모드 As String = "디버그모드"
+Public Const SET_외부판매수량열 As String = "외부_판매수량열"
+Public Const SET_외부판매금액열 As String = "외부_판매금액열"

@@ -1,0 +1,334 @@
+Attribute VB_Name = "mdl_TempFiles"
+Option Explicit
+
+' ========================================
+' 모듈: mdl_TempFiles
+' 설명: 임시 파일 생성 및 관리
+' ========================================
+
+' ? 임시 폴더 경로 반환
+Public Function GetTempFolder() As String
+    Dim tempPath As String
+    tempPath = ThisWorkbook.Path & "\임시\"
+    
+    ' 폴더 없으면 생성
+    On Error Resume Next
+    If Dir(tempPath, vbDirectory) = "" Then
+        MkDir tempPath
+        Debug.Print "임시 폴더 생성: " & tempPath
+    End If
+    On Error GoTo 0
+    
+    GetTempFolder = tempPath
+End Function
+
+' ? 대시보드 데이터 파일 생성
+Public Function CreateDashboardDataFile() As Workbook
+    On Error GoTo ErrorHandler
+    
+    Dim wbTemp As Workbook
+    Dim wsTemp As Worksheet
+    Dim fileName As String
+    Dim tempPath As String
+    
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    ' 파일명 생성 (타임스탬프로 고유하게)
+    tempPath = GetTempFolder()
+    fileName = tempPath & "_대시보드데이터_" & Format(Now, "yyyymmddhhnnss") & ".xlsx"
+    
+    Debug.Print vbCrLf & "=== 대시보드 데이터 파일 생성 ==="
+    Debug.Print "파일명: " & fileName
+    
+    ' 새 통합 문서 생성
+    Set wbTemp = Workbooks.Add
+    Set wsTemp = wbTemp.Sheets(1)
+    wsTemp.Name = "통합데이터"
+    
+    ' 헤더 복사
+    ThisWorkbook.Sheets("누적데이터").Rows(1).Copy wsTemp.Rows(1)
+    Application.CutCopyMode = False
+    
+    ' 백업 + 누적 데이터 통합
+    Call LoadAllDataToWorkbook(wbTemp)
+    
+    ' 파일 저장
+    wbTemp.SaveAs fileName, FileFormat:=xlOpenXMLWorkbook
+    
+    Application.DisplayAlerts = True
+    Application.ScreenUpdating = True
+    
+    Set CreateDashboardDataFile = wbTemp
+    
+    Debug.Print "통합 완료: " & (wbTemp.Sheets(1).Cells(wbTemp.Sheets(1).Rows.Count, 1).End(xlUp).Row - 1) & " 행"
+    Debug.Print "===" & vbCrLf
+    
+    Exit Function
+    
+ErrorHandler:
+    Application.DisplayAlerts = True
+    Application.ScreenUpdating = True
+    MsgBox "임시 파일 생성 오류: " & Err.Description, vbCritical
+    Set CreateDashboardDataFile = Nothing
+End Function
+
+' 백업 + 누적 데이터 통합
+Private Sub LoadAllDataToWorkbook(wbTarget As Workbook)
+    Dim wsTarget As Worksheet
+    Dim backupFolder As String
+    Dim fileName As String
+    Dim wbBackup As Workbook
+    Dim wsBackup As Worksheet
+    Dim lastRow As Long
+    Dim pasteRow As Long
+    Dim fileCount As Long
+    
+    Set wsTarget = wbTarget.Sheets(1)
+    pasteRow = 2
+    fileCount = 0
+    
+    Debug.Print "  백업 폴더 검색 시작..."
+    
+    ' 1. 백업 파일들 로드
+    backupFolder = ThisWorkbook.Path & "\백업\"
+    
+    If Dir(backupFolder, vbDirectory) <> "" Then
+        fileName = Dir(backupFolder & "*.xlsx")
+        
+        Do While fileName <> ""
+            Debug.Print "  백업 로드: " & fileName
+            
+            On Error Resume Next
+            Set wbBackup = Workbooks.Open(backupFolder & fileName, ReadOnly:=True, UpdateLinks:=False)
+            On Error GoTo 0
+            
+            If Not wbBackup Is Nothing Then
+                Set wsBackup = wbBackup.Sheets(1)
+                
+                lastRow = wsBackup.Cells(wsBackup.Rows.Count, 1).End(xlUp).Row
+                
+                If lastRow > 1 Then
+                    wsBackup.Range("A2:L" & lastRow).Copy
+                    wsTarget.Cells(pasteRow, 1).PasteSpecial xlPasteValues
+                    pasteRow = pasteRow + (lastRow - 1)
+                    fileCount = fileCount + 1
+                    Debug.Print "    → " & (lastRow - 1) & " 행 추가"
+                End If
+                
+                wbBackup.Close False
+                Set wbBackup = Nothing
+            End If
+            
+            fileName = Dir()
+        Loop
+        
+        Debug.Print "  백업 파일 총 " & fileCount & "개 통합 완료"
+    Else
+        Debug.Print "  백업 폴더 없음"
+    End If
+    
+    ' 2. 누적데이터 추가
+    Debug.Print "  누적데이터 추가 중..."
+    
+    Dim wsAccum As Worksheet
+    Set wsAccum = ThisWorkbook.Sheets("누적데이터")
+    
+    lastRow = wsAccum.Cells(wsAccum.Rows.Count, 1).End(xlUp).Row
+    
+    If lastRow > 1 Then
+        wsAccum.Range("A2:L" & lastRow).Copy
+        wsTarget.Cells(pasteRow, 1).PasteSpecial xlPasteValues
+        Debug.Print "    → " & (lastRow - 1) & " 행 추가"
+    Else
+        Debug.Print "    → 누적데이터 없음"
+    End If
+    
+    Application.CutCopyMode = False
+End Sub
+
+' ? 조회 결과 파일 생성
+Public Function CreateQueryResultFile(queryName As String, wsSource As Worksheet) As Workbook
+    On Error GoTo ErrorHandler
+    
+    Dim wbResult As Workbook
+    Dim wsResult As Worksheet
+    Dim fileName As String
+    Dim tempPath As String
+    Dim lastRow As Long
+    
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    ' 파일명 생성 (안전한 이름으로)
+    queryName = Replace(queryName, "/", "_")
+    queryName = Replace(queryName, "\", "_")
+    queryName = Replace(queryName, ":", "_")
+    
+    tempPath = GetTempFolder()
+    fileName = tempPath & "_조회결과_" & queryName & "_" & Format(Now, "yyyymmddhhnnss") & ".xlsx"
+    
+    Debug.Print vbCrLf & "=== 조회 결과 파일 생성 ==="
+    Debug.Print "파일명: " & fileName
+    
+    ' 새 통합 문서 생성
+    Set wbResult = Workbooks.Add
+    Set wsResult = wbResult.Sheets(1)
+    wsResult.Name = "조회결과"
+    
+    ' 데이터 복사
+    wsSource.UsedRange.Copy wsResult.Range("A1")
+    Application.CutCopyMode = False
+    
+    lastRow = wsResult.Cells(wsResult.Rows.Count, 1).End(xlUp).Row
+    
+    ' 서식 적용
+    With wsResult
+        .Range("A1:L1").HorizontalAlignment = xlCenter
+        .Range("A1:L1").Font.Bold = True
+        .Range("A1:L1").Interior.color = RGB(68, 114, 196)
+        .Range("A1:L1").Font.color = RGB(255, 255, 255)
+        
+        If lastRow > 1 Then
+            .Range("A2:A" & lastRow).NumberFormat = "yyyy-mm-dd"
+            .Range("F2:F" & lastRow).NumberFormat = "0"
+            .Range("G2:G" & lastRow).NumberFormat = "#,##0"
+        End If
+        
+        .Cells.EntireColumn.AutoFit
+    End With
+    
+    ' 파일 저장
+    wbResult.SaveAs fileName, FileFormat:=xlOpenXMLWorkbook
+    
+    Application.DisplayAlerts = True
+    Application.ScreenUpdating = True
+    
+    Set CreateQueryResultFile = wbResult
+    
+    Debug.Print "조회 결과: " & (lastRow - 1) & " 행"
+    Debug.Print "===" & vbCrLf
+    
+    Exit Function
+    
+ErrorHandler:
+    Application.DisplayAlerts = True
+    Application.ScreenUpdating = True
+    MsgBox "조회 파일 생성 오류: " & Err.Description, vbCritical
+    Set CreateQueryResultFile = Nothing
+End Function
+
+' ? 임시 파일 삭제
+Public Sub DeleteTempFile(filePath As String)
+    On Error Resume Next
+    
+    ' 파일 닫기
+    Dim wb As Workbook
+    For Each wb In Workbooks
+        If wb.FullName = filePath Then
+            wb.Close False
+            Exit For
+        End If
+    Next wb
+    
+    ' 파일 삭제
+    If Dir(filePath) <> "" Then
+        Kill filePath
+        Debug.Print "파일 삭제: " & filePath
+    End If
+    
+    On Error GoTo 0
+End Sub
+
+' ? 임시 폴더 전체 정리
+Public Sub CleanupTempFolder()
+    On Error Resume Next
+    
+    Dim tempPath As String
+    Dim fileName As String
+    Dim filePath As String
+    Dim deletedCount As Long
+    
+    tempPath = GetTempFolder()
+    fileName = Dir(tempPath & "*.*")
+    
+    deletedCount = 0
+    
+    Debug.Print vbCrLf & "=== 임시 파일 정리 ==="
+    
+    Do While fileName <> ""
+        filePath = tempPath & fileName
+        
+        ' 파일이 열려있지 않으면 삭제
+        If Not IsFileOpen(filePath) Then
+            Kill filePath
+            deletedCount = deletedCount + 1
+            Debug.Print "  삭제: " & fileName
+        Else
+            Debug.Print "  사용 중: " & fileName
+        End If
+        
+        fileName = Dir()
+    Loop
+    
+    If deletedCount > 0 Then
+        Debug.Print "정리 완료: " & deletedCount & "개"
+    Else
+        Debug.Print "정리할 파일 없음"
+    End If
+    
+    Debug.Print "===" & vbCrLf
+    
+    On Error GoTo 0
+End Sub
+
+' 파일 열림 상태 확인
+Private Function IsFileOpen(filePath As String) As Boolean
+    Dim wb As Workbook
+    
+    For Each wb In Workbooks
+        If wb.FullName = filePath Then
+            IsFileOpen = True
+            Exit Function
+        End If
+    Next wb
+    
+    IsFileOpen = False
+End Function
+
+' ? 오래된 임시 파일 자동 정리 (1일 이상)
+Public Sub CleanupOldTempFiles()
+    On Error Resume Next
+    
+    Dim tempPath As String
+    Dim fileName As String
+    Dim filePath As String
+    Dim fileDate As Date
+    Dim deletedCount As Long
+    
+    tempPath = GetTempFolder()
+    fileName = Dir(tempPath & "*.*")
+    
+    deletedCount = 0
+    
+    Do While fileName <> ""
+        filePath = tempPath & fileName
+        fileDate = FileDateTime(filePath)
+        
+        ' 1일 이상 지난 파일 삭제
+        If Date - Int(fileDate) >= 1 Then
+            If Not IsFileOpen(filePath) Then
+                Kill filePath
+                deletedCount = deletedCount + 1
+            End If
+        End If
+        
+        fileName = Dir()
+    Loop
+    
+    If deletedCount > 0 Then
+        Debug.Print "오래된 임시 파일 정리: " & deletedCount & "개"
+    End If
+    
+    On Error GoTo 0
+End Sub

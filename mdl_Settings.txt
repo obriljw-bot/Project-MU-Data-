@@ -1,0 +1,438 @@
+Attribute VB_Name = "mdl_Settings"
+Option Explicit
+
+' ========================================
+' 모듈: mdl_Settings
+' 설명: 설정 시트 관리 함수
+' ========================================
+
+' 시스템 설정값 가져오기
+Public Function GetSetting(settingName As String) As String
+    On Error GoTo ErrorHandler
+    
+    Dim ws As Worksheet
+    Dim lastRow As Long
+    Dim i As Long
+    Dim sheetFound As Boolean
+    Dim foundValue As String
+    
+    ' 시트 찾기
+    sheetFound = False
+    
+    On Error Resume Next
+    Set ws = ThisWorkbook.Sheets("시스템설정")
+    If Not ws Is Nothing Then sheetFound = True
+    On Error GoTo ErrorHandler
+    
+    If Not sheetFound Then
+        On Error Resume Next
+        Set ws = ThisWorkbook.Sheets("시스템 설정")
+        If Not ws Is Nothing Then sheetFound = True
+        On Error GoTo ErrorHandler
+    End If
+    
+    If Not sheetFound Then
+        On Error Resume Next
+        Set ws = ThisWorkbook.Sheets(SHEET_시스템설정)
+        If Not ws Is Nothing Then sheetFound = True
+        On Error GoTo ErrorHandler
+    End If
+    
+    If Not sheetFound Or ws Is Nothing Then
+        GoTo DefaultValue
+    End If
+    
+    On Error GoTo DefaultValue
+    
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    
+    ' 시트에서 설정값 찾기
+    For i = 2 To lastRow
+        If Trim(ws.Cells(i, 1).value) = settingName Then
+            foundValue = ws.Cells(i, 2).value
+            GetSetting = foundValue
+            Exit Function
+        End If
+    Next i
+    
+DefaultValue:
+    ' 설정이 없으면 기본값
+    Select Case settingName
+        Case SET_기본경로, "기본저장경로"
+            GetSetting = ""
+        Case SET_파일접두어
+            GetSetting = FILE_PREFIX
+        Case SET_파일접미어
+            GetSetting = FILE_SUFFIX
+        Case SET_요약시트, SET_중복검증, SET_진행표시
+            GetSetting = "O"
+        Case Else
+            GetSetting = ""
+    End Select
+    Exit Function
+    
+ErrorHandler:
+    GoTo DefaultValue
+End Function
+
+' 매장 목록 가져오기
+Public Function GetStoreList() As Collection
+    On Error GoTo ErrorHandler
+    
+    Dim ws As Worksheet
+    Dim lastRow As Long
+    Dim i As Long
+    Dim result As New Collection
+    Dim storeValue As Variant
+    Dim useFlag As Variant
+    Dim sheetFound As Boolean
+    
+    ' 시트 찾기
+    sheetFound = False
+    
+    On Error Resume Next
+    Set ws = ThisWorkbook.Sheets("매장설정")
+    If Not ws Is Nothing Then sheetFound = True
+    On Error GoTo ErrorHandler
+    
+    If Not sheetFound Then
+        On Error Resume Next
+        Set ws = ThisWorkbook.Sheets("매장 설정")
+        If Not ws Is Nothing Then sheetFound = True
+        On Error GoTo ErrorHandler
+    End If
+    
+    If Not sheetFound Then
+        On Error Resume Next
+        Set ws = ThisWorkbook.Sheets(SHEET_매장설정)
+        If Not ws Is Nothing Then sheetFound = True
+        On Error GoTo ErrorHandler
+    End If
+    
+    If Not sheetFound Or ws Is Nothing Then
+        Set GetStoreList = result
+        Exit Function
+    End If
+    
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    
+    ' 데이터 읽기
+    For i = 2 To lastRow
+        storeValue = ws.Cells(i, 2).value ' B열: 매장명
+        useFlag = ws.Cells(i, 6).value    ' F열: 사용여부
+        
+        ' 사용여부 체크 (공백 제거)
+        If Trim(UCase(CStr(useFlag))) = "O" Then
+            If storeValue <> "" Then
+                result.Add CStr(storeValue)
+            End If
+        End If
+    Next i
+    
+    Set GetStoreList = result
+    Exit Function
+    
+ErrorHandler:
+    Set GetStoreList = New Collection
+End Function
+
+' 통합 브랜드 로드
+Public Function LoadIntegratedBrands() As Collection
+    On Error GoTo ErrorHandler
+    
+    Dim ws As Worksheet
+    Dim lastRow As Long
+    Dim i As Long, j As Long
+    Dim result As New Collection
+    Dim brandItem As Object
+    Dim subBrands As Collection
+    Dim brandName As String
+    Dim sheetFound As Boolean
+    Dim useFlag As String
+    
+    ' 디버그 모드
+    Dim debugMode As Boolean
+    debugMode = True
+    
+    If debugMode Then
+        Debug.Print vbCrLf & "=== LoadIntegratedBrands 시작 ==="
+    End If
+    
+    ' 시트 찾기
+    sheetFound = False
+    
+    On Error Resume Next
+    Set ws = ThisWorkbook.Sheets("브랜드설정")
+    If Not ws Is Nothing Then
+        sheetFound = True
+        If debugMode Then Debug.Print "? 시트 발견: 브랜드설정"
+    End If
+    On Error GoTo ErrorHandler
+    
+    If Not sheetFound Then
+        On Error Resume Next
+        Set ws = ThisWorkbook.Sheets("브랜드 설정")
+        If Not ws Is Nothing Then
+            sheetFound = True
+            If debugMode Then Debug.Print "? 시트 발견: 브랜드 설정"
+        End If
+        On Error GoTo ErrorHandler
+    End If
+    
+    If Not sheetFound Then
+        On Error Resume Next
+        Set ws = ThisWorkbook.Sheets(SHEET_브랜드설정)
+        If Not ws Is Nothing Then
+            sheetFound = True
+            If debugMode Then Debug.Print "? 시트 발견: " & SHEET_브랜드설정
+        End If
+        On Error GoTo ErrorHandler
+    End If
+    
+    If Not sheetFound Or ws Is Nothing Then
+        If debugMode Then Debug.Print "? 시트를 찾을 수 없음!"
+        Set LoadIntegratedBrands = result
+        Exit Function
+    End If
+    
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    If debugMode Then Debug.Print "마지막 행: " & lastRow
+    
+    ' 통합 브랜드 읽기
+    For i = 2 To lastRow
+        brandName = Trim(CStr(ws.Cells(i, 1).value))
+        useFlag = Trim(UCase(CStr(ws.Cells(i, 7).value)))
+        
+        If debugMode Then
+            Debug.Print ""
+            Debug.Print i & "행 처리 중..."
+            Debug.Print "  A열(통합브랜드명): [" & brandName & "]"
+            Debug.Print "  G열(사용여부): [" & useFlag & "]"
+        End If
+        
+        ' G열(7): 사용여부가 "O"인 경우만
+        If useFlag = "O" Then
+            If debugMode Then Debug.Print "  → 사용여부 확인: ?"
+            
+            If brandName <> "" Then
+                If debugMode Then Debug.Print "  → 브랜드명 확인: ?"
+                
+                ' ?? 핵심 수정: Dictionary 대신 새로운 객체 생성
+                Set brandItem = CreateObject("Scripting.Dictionary")
+                Set subBrands = New Collection
+                
+                ' B~F열(2~6): 하위 브랜드들
+                For j = 2 To 6
+                    Dim subBrandName As String
+                    subBrandName = Trim(CStr(ws.Cells(i, j).value))
+                    
+                    If subBrandName <> "" Then
+                        subBrands.Add subBrandName
+                        If debugMode Then Debug.Print "    하위브랜드 추가: " & subBrandName
+                    End If
+                Next j
+                
+                If subBrands.Count > 0 Then
+                    ' ?? 핵심 수정: Dictionary에 값 설정
+                    brandItem.Add "Name", brandName
+                    brandItem.Add "Brands", subBrands
+                    
+                    ' ?? 핵심 수정: Collection에 추가
+                    result.Add brandItem
+                    
+                    If debugMode Then Debug.Print "  → ? 통합브랜드 추가 완료: " & brandName & " (" & subBrands.Count & "개)"
+                Else
+                    If debugMode Then Debug.Print "  → ? 하위브랜드 없음 - 제외"
+                End If
+            Else
+                If debugMode Then Debug.Print "  → ? 브랜드명 비어있음"
+            End If
+        Else
+            If debugMode Then Debug.Print "  → ? 사용안함 (G열: " & useFlag & ")"
+        End If
+    Next i
+    
+    If debugMode Then
+        Debug.Print ""
+        Debug.Print "=== LoadIntegratedBrands 완료 ==="
+        Debug.Print "총 통합브랜드: " & result.Count & "개"
+        Debug.Print "================================" & vbCrLf
+    End If
+    
+    Set LoadIntegratedBrands = result
+    Exit Function
+    
+ErrorHandler:
+    If debugMode Then
+        Debug.Print "? 오류 발생!"
+        Debug.Print "Error " & Err.Number & ": " & Err.Description
+        Debug.Print "오류 발생 위치: " & Erl
+    End If
+    Set LoadIntegratedBrands = New Collection
+End Function
+
+' 브랜드 → 통합브랜드 매핑
+Public Function GetIntegratedBrandName(brandName As String) As String
+    On Error GoTo ErrorHandler
+    
+    Dim ws As Worksheet
+    Dim lastRow As Long
+    Dim i As Long, j As Long
+    Dim sheetFound As Boolean
+    
+    ' 시트 찾기
+    sheetFound = False
+    
+    On Error Resume Next
+    Set ws = ThisWorkbook.Sheets("브랜드설정")
+    If Not ws Is Nothing Then sheetFound = True
+    On Error GoTo ErrorHandler
+    
+    If Not sheetFound Then
+        On Error Resume Next
+        Set ws = ThisWorkbook.Sheets("브랜드 설정")
+        If Not ws Is Nothing Then sheetFound = True
+        On Error GoTo ErrorHandler
+    End If
+    
+    If Not sheetFound Then
+        On Error Resume Next
+        Set ws = ThisWorkbook.Sheets(SHEET_브랜드설정)
+        If Not ws Is Nothing Then sheetFound = True
+        On Error GoTo ErrorHandler
+    End If
+    
+    If Not sheetFound Or ws Is Nothing Then
+        GetIntegratedBrandName = brandName
+        Exit Function
+    End If
+    
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    
+    For i = 2 To lastRow
+        If ws.Cells(i, 7).value = "O" Then
+            For j = 2 To 6
+                If ws.Cells(i, j).value = brandName Then
+                    GetIntegratedBrandName = ws.Cells(i, 1).value
+                    Exit Function
+                End If
+            Next j
+        End If
+    Next i
+    
+    ' 통합 브랜드에 속하지 않으면 원래 이름
+    GetIntegratedBrandName = brandName
+    Exit Function
+    
+ErrorHandler:
+    GetIntegratedBrandName = brandName
+End Function
+
+' 초기 설정 시트 생성 (최초 1회)
+Public Sub CreateInitialSheets()
+    On Error Resume Next
+    
+    ' 시스템설정 시트
+    Dim wsConfig As Worksheet
+    Set wsConfig = ThisWorkbook.Sheets(SHEET_시스템설정)
+    
+    If wsConfig Is Nothing Then
+        Set wsConfig = ThisWorkbook.Sheets.Add
+        wsConfig.Name = SHEET_시스템설정
+        
+        With wsConfig
+            .Cells(1, 1) = "설정항목"
+            .Cells(1, 2) = "설정값"
+            .Cells(1, 3) = "설명"
+            
+            .Cells(2, 1) = SET_기본경로
+            .Cells(2, 2) = DEFAULT_FOLDER
+            .Cells(2, 3) = "브랜드 파일 저장 위치"
+            
+            .Cells(3, 1) = SET_파일접두어
+            .Cells(3, 2) = FILE_PREFIX
+            
+            .Cells(4, 1) = SET_파일접미어
+            .Cells(4, 2) = FILE_SUFFIX
+            
+            .Cells(5, 1) = SET_요약시트
+            .Cells(5, 2) = "O"
+            .Cells(5, 3) = "O/X"
+            
+            .Cells(6, 1) = SET_중복검증
+            .Cells(6, 2) = "O"
+            .Cells(6, 3) = "O/X"
+            
+            .Cells(7, 1) = SET_진행표시
+            .Cells(7, 2) = "O"
+            .Cells(7, 3) = "O/X"
+            
+            .Range("A1:C1").Font.Bold = True
+            .Columns("A:C").AutoFit
+        End With
+    End If
+    
+    ' 매장설정 시트
+    Dim wsStore As Worksheet
+    Set wsStore = ThisWorkbook.Sheets(SHEET_매장설정)
+    
+    If wsStore Is Nothing Then
+        Set wsStore = ThisWorkbook.Sheets.Add
+        wsStore.Name = SHEET_매장설정
+        
+        With wsStore
+            .Cells(1, 1) = "매장코드"
+            .Cells(1, 2) = "매장명"
+            .Cells(1, 3) = "담당자"
+            .Cells(1, 4) = "연락처"
+            .Cells(1, 5) = "데이터수령주기"
+            .Cells(1, 6) = "사용여부"
+            
+            .Cells(2, 1) = "MM"
+            .Cells(2, 2) = "미미라인"
+            .Cells(2, 3) = ""
+            .Cells(2, 4) = ""
+            .Cells(2, 5) = "10일"
+            .Cells(2, 6) = "O"
+            
+            .Range("A1:F1").Font.Bold = True
+            .Columns("A:F").AutoFit
+        End With
+    End If
+    
+    ' 브랜드설정 시트
+    Dim wsBrand As Worksheet
+    Set wsBrand = ThisWorkbook.Sheets(SHEET_브랜드설정)
+    
+    If wsBrand Is Nothing Then
+        Set wsBrand = ThisWorkbook.Sheets.Add
+        wsBrand.Name = SHEET_브랜드설정
+        
+        With wsBrand
+            .Cells(1, 1) = "통합브랜드명"
+            .Cells(1, 2) = "하위브랜드1"
+            .Cells(1, 3) = "하위브랜드2"
+            .Cells(1, 4) = "하위브랜드3"
+            .Cells(1, 5) = "하위브랜드4"
+            .Cells(1, 6) = "하위브랜드5"
+            .Cells(1, 7) = "사용여부"
+            .Cells(1, 8) = "비고"
+            
+            ' 예시 데이터
+            .Cells(2, 1) = "클리오"
+            .Cells(2, 2) = "구달"
+            .Cells(2, 3) = "페리페라"
+            .Cells(2, 4) = "클리오"
+            .Cells(2, 5) = "더마토리"
+            .Cells(2, 7) = "O"
+            .Cells(2, 8) = "4개 브랜드 통합"
+            
+            .Range("A1:H1").Font.Bold = True
+            .Columns("A:H").AutoFit
+        End With
+    End If
+    
+    MsgBox "초기 설정 시트가 생성되었습니다!" & vbCrLf & _
+           "브랜드설정, 매장설정, 시스템설정 시트를 확인하세요.", vbInformation
+End Sub
+

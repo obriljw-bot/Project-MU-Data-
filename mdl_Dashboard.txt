@@ -1,0 +1,1345 @@
+Attribute VB_Name = "mdl_Dashboard"
+Option Explicit
+
+' ========================================
+' 모듈: mdl_Dashboard (분석 버전)
+' 설명: 판매 분석 대시보드
+' ========================================
+
+Private CurrentDataFile As String
+
+' ? 대시보드 새로고침
+Public Sub 대시보드_새로고침()
+    On Error GoTo ErrorHandler
+    
+    Dim wbData As Workbook
+    Dim startTime As Double
+    Dim dataRows As Long
+    
+    startTime = Timer
+    
+    Application.StatusBar = "대시보드 데이터 준비 중..."
+    
+    ' 기존 데이터 파일 닫기
+    If CurrentDataFile <> "" Then
+        Call mdl_TempFiles.DeleteTempFile(CurrentDataFile)
+        CurrentDataFile = ""
+    End If
+    
+    ' 새 데이터 파일 생성
+    Set wbData = mdl_TempFiles.CreateDashboardDataFile()
+    
+    If wbData Is Nothing Then
+        MsgBox "? 데이터 파일 생성 실패!", vbCritical
+        Application.StatusBar = False
+        Exit Sub
+    End If
+    
+    CurrentDataFile = wbData.FullName
+    dataRows = wbData.Sheets(1).Cells(wbData.Sheets(1).Rows.Count, 1).End(xlUp).Row - 1
+    
+    ' 대시보드 재생성
+    Call 간단한대시보드생성
+    
+    Application.StatusBar = False
+    
+    Dim elapsedTime As Double
+    elapsedTime = Round(Timer - startTime, 1)
+    
+    MsgBox "? 대시보드 업데이트 완료!" & vbCrLf & vbCrLf & _
+           "?? 소요 시간: " & elapsedTime & "초" & vbCrLf & _
+           "?? 통합 데이터: " & Format(dataRows, "#,##0") & " 행", _
+           vbInformation, "완료"
+    
+    Exit Sub
+    
+ErrorHandler:
+    Application.StatusBar = False
+    MsgBox "대시보드 새로고침 오류: " & Err.Description, vbCritical
+End Sub
+
+' ? 현재 데이터 파일 경로
+Public Function GetCurrentDataFile() As String
+    GetCurrentDataFile = CurrentDataFile
+End Function
+
+' ??? 분석 대시보드 생성
+Public Sub 간단한대시보드생성()
+    On Error GoTo ErrorHandler
+    
+    Dim wsDash As Worksheet
+    Dim wsAnalysis As Worksheet
+    Dim wbData As Workbook
+    Dim lastRow As Long
+    Dim startTime As Double
+    
+    startTime = Timer
+    
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    Debug.Print vbCrLf & "=== 분석 대시보드 생성 시작 ==="
+    
+    ' Step 1: 기존 시트 정리
+    Debug.Print "1. 기존 시트 정리..."
+    Call 기존시트정리
+    
+    ' Step 2: 데이터 파일 생성 (이미 있으면 재사용)
+    If CurrentDataFile = "" Then
+        Debug.Print "2. 데이터 파일 생성..."
+        Set wbData = mdl_TempFiles.CreateDashboardDataFile()
+        
+        If wbData Is Nothing Then
+            MsgBox "? 데이터 파일 생성 실패!", vbCritical
+            GoTo CleanExit
+        End If
+        
+        CurrentDataFile = wbData.FullName
+    Else
+        Debug.Print "2. 기존 데이터 파일 사용..."
+        Set wbData = Workbooks.Open(CurrentDataFile, ReadOnly:=True)
+    End If
+    
+    Debug.Print "   데이터 파일: " & CurrentDataFile
+    
+    ' Step 3: 분석용 시트 생성
+    Debug.Print "3. 분석용 시트 생성..."
+    Set wsAnalysis = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+    wsAnalysis.Name = "분석데이터_" & Format(Now, "hhnnss")
+    wsAnalysis.Visible = xlSheetVeryHidden
+    
+    wbData.Sheets(1).UsedRange.Copy wsAnalysis.Range("A1")
+    Application.CutCopyMode = False
+    
+    lastRow = wsAnalysis.Cells(wsAnalysis.Rows.Count, 1).End(xlUp).Row
+    Debug.Print "   데이터 행수: " & (lastRow - 1)
+    
+    ' Step 4: 추가 분석 열 생성
+    Debug.Print "4. 분석 정보 추가..."
+    Call 분석정보추가(wsAnalysis, lastRow)
+    
+    ' Step 5: 대시보드 시트 생성
+    Debug.Print "5. 대시보드 시트 생성..."
+    Set wsDash = ThisWorkbook.Sheets.Add(Before:=ThisWorkbook.Sheets(1))
+    wsDash.Name = "대시보드_" & Format(Now, "hhnnss")
+    
+    On Error Resume Next
+    ThisWorkbook.Sheets("대시보드").Delete
+    On Error GoTo ErrorHandler
+    wsDash.Name = "대시보드"
+    
+    wsDash.Tab.color = RGB(68, 114, 196)
+    wsDash.Activate
+    ActiveWindow.DisplayGridlines = False
+    
+    ' Step 6: 대시보드 구성
+    Debug.Print "6. 대시보드 내용 생성..."
+    
+    Call 헤더생성(wsDash, wsAnalysis, lastRow)
+    Debug.Print "   - 헤더"
+    
+    Call 분석KPI생성(wsDash, wsAnalysis, lastRow)
+    Debug.Print "   - 분석 KPI"
+    
+    Call 자동인사이트생성(wsDash, wsAnalysis, lastRow)
+    Debug.Print "   - 자동 인사이트"
+    
+    Call 월간추이생성(wsDash, wsAnalysis, lastRow)
+    Debug.Print "   - 월간 추이"
+    
+    Call 브랜드성과분석생성(wsDash, wsAnalysis, lastRow)
+    Debug.Print "   - 브랜드 성과"
+    
+    Call 주간추이생성(wsDash, wsAnalysis, lastRow)
+    Debug.Print "   - 주간 추이"
+    
+    Call 추천액션생성(wsDash, wsAnalysis, lastRow)
+    Debug.Print "   - 추천 액션"
+    
+    wsDash.Range("A1").Select
+    
+CleanExit:
+    Application.DisplayAlerts = True
+    Application.ScreenUpdating = True
+    
+    Dim elapsedTime As Double
+    elapsedTime = Round(Timer - startTime, 1)
+    
+    Debug.Print "=== 생성 완료 ===" & vbCrLf
+    Debug.Print "소요 시간: " & elapsedTime & "초" & vbCrLf
+    
+    If Not wsDash Is Nothing Then
+        MsgBox "? 분석 대시보드 생성 완료!" & vbCrLf & vbCrLf & _
+               "?? 소요 시간: " & elapsedTime & "초" & vbCrLf & _
+               "?? 데이터: " & Format(lastRow - 1, "#,##0") & " 행", vbInformation
+    End If
+    
+    Exit Sub
+    
+ErrorHandler:
+    Application.DisplayAlerts = True
+    Application.ScreenUpdating = True
+    Debug.Print "? 오류: " & Err.Description
+    MsgBox "오류: " & Err.Description, vbCritical
+End Sub
+
+' ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+' 헬퍼 함수들
+' ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+' 기존 시트 정리
+Private Sub 기존시트정리()
+    Dim ws As Worksheet
+    
+    On Error Resume Next
+    For Each ws In ThisWorkbook.Worksheets
+        If Left(ws.Name, 5) = "분석데이터" Or ws.Name = "_분석용" Then
+            ws.Delete
+        End If
+    Next ws
+    On Error GoTo 0
+End Sub
+
+' 분석 정보 추가 (주차, 월, 품목키 등)
+Private Sub 분석정보추가(ws As Worksheet, lastRow As Long)
+    ' 주차 (M열)
+    ws.Cells(1, 13).value = "주차"
+    
+    ' 월 (N열)
+    ws.Cells(1, 14).value = "년월"
+    
+    ' 품목키 (O열)
+    ws.Cells(1, 15).value = "품목키"
+    
+    Dim i As Long
+    Dim saleDate As Date
+    Dim dayNum As Long
+    Dim brandProduct As String
+    
+    For i = 2 To lastRow
+        On Error Resume Next
+        saleDate = ws.Cells(i, 1).value
+        
+        If saleDate > 0 Then
+            ' 주차
+            dayNum = day(saleDate)
+            If dayNum >= 1 And dayNum <= 10 Then
+                ws.Cells(i, 13).value = "W1"
+            ElseIf dayNum >= 11 And dayNum <= 20 Then
+                ws.Cells(i, 13).value = "W2"
+            Else
+                ws.Cells(i, 13).value = "W3"
+            End If
+            
+            ' 년월
+            ws.Cells(i, 14).value = Format(saleDate, "yyyy-mm")
+        End If
+        
+        ' 품목키 (브랜드 + 제품명)
+        brandProduct = Trim(CStr(ws.Cells(i, 3).value)) & "|" & Trim(CStr(ws.Cells(i, 5).value))
+        ws.Cells(i, 15).value = brandProduct
+        
+        On Error GoTo 0
+    Next i
+End Sub
+
+' 헤더 생성 (이모지 제거)
+Private Sub 헤더생성(wsDash As Worksheet, wsData As Worksheet, lastRow As Long)
+    ' 제목
+    With wsDash.Range("A1:J1")
+        .Merge
+        .value = "[원브릿지] 판매 분석 대시보드"
+        .Font.Size = 20
+        .Font.Bold = True
+        .Font.color = RGB(68, 114, 196)
+        .HorizontalAlignment = xlLeft
+        .RowHeight = 35
+    End With
+    
+    ' 새로고침 버튼
+    Dim btn As Button
+    Set btn = wsDash.Buttons.Add(wsDash.Range("K1").Left, wsDash.Range("K1").Top, 100, 30)
+    btn.Caption = "?? 새로고침"
+    btn.OnAction = "mdl_Dashboard.대시보드_새로고침"
+    
+    ' 분석 기간
+    On Error Resume Next
+    Dim minDate As Date, maxDate As Date
+    minDate = Application.WorksheetFunction.Min(wsData.Range("A2:A" & lastRow))
+    maxDate = Application.WorksheetFunction.Max(wsData.Range("A2:A" & lastRow))
+    On Error GoTo 0
+    
+    If minDate > 0 And maxDate > 0 Then
+        wsDash.Range("A2").value = "[분석 기간] " & Format(minDate, "yyyy-mm-dd") & " ~ " & Format(maxDate, "yyyy-mm-dd")
+        wsDash.Range("A2").Font.Size = 10
+        wsDash.Range("A2").Font.color = RGB(100, 100, 100)
+    End If
+End Sub
+
+' 분석 KPI 생성 (브랜드/품목 증감 추가)
+Private Sub 분석KPI생성(wsDash As Worksheet, wsData As Worksheet, lastRow As Long)
+    On Error Resume Next
+    
+    Dim totalSales As Double
+    Dim currentMonthSales As Double
+    Dim lastMonthSales As Double
+    Dim growthRate As Double
+    Dim brandCount As Long
+    Dim lastBrandCount As Long
+    Dim productCount As Long
+    Dim lastProductCount As Long
+    
+    ' 전체 판매액
+    totalSales = Application.WorksheetFunction.Sum(wsData.Range("G2:G" & lastRow))
+    
+    ' 최근 월/전월 찾기
+    Dim monthDict As Object
+    Set monthDict = CreateObject("Scripting.Dictionary")
+    
+    Dim i As Long
+    For i = 2 To lastRow
+        Dim ym As String
+        ym = wsData.Cells(i, 14).value
+        If ym <> "" Then
+            If Not monthDict.exists(ym) Then
+                monthDict.Add ym, 0
+            End If
+        End If
+    Next i
+    
+    ' 월 정렬
+    Dim months() As Variant
+    months = monthDict.Keys
+    
+    Dim j As Long
+    Dim temp As Variant
+    For i = 0 To UBound(months) - 1
+        For j = i + 1 To UBound(months)
+            If months(i) > months(j) Then
+                temp = months(i)
+                months(i) = months(j)
+                months(j) = temp
+            End If
+        Next j
+    Next i
+    
+    ' 최근 월/전월
+    Dim currentMonth As String
+    Dim lastMonth As String
+    
+    If UBound(months) >= 0 Then
+        currentMonth = months(UBound(months))
+        If UBound(months) >= 1 Then
+            lastMonth = months(UBound(months) - 1)
+        End If
+    End If
+    
+    ' 브랜드 집계
+    Dim currentBrandDict As Object
+    Dim lastBrandDict As Object
+    Dim currentProductDict As Object
+    Dim lastProductDict As Object
+    
+    Set currentBrandDict = CreateObject("Scripting.Dictionary")
+    Set lastBrandDict = CreateObject("Scripting.Dictionary")
+    Set currentProductDict = CreateObject("Scripting.Dictionary")
+    Set lastProductDict = CreateObject("Scripting.Dictionary")
+    
+    For i = 2 To lastRow
+        Dim rowMonth As String
+        Dim salesAmt As Double
+        Dim brandName As String
+        Dim productKey As String
+        
+        rowMonth = wsData.Cells(i, 14).value
+        salesAmt = wsData.Cells(i, 7).value
+        brandName = Trim(CStr(wsData.Cells(i, 3).value))
+        productKey = wsData.Cells(i, 15).value
+        
+        ' 현재 월
+        If rowMonth = currentMonth Then
+            currentMonthSales = currentMonthSales + salesAmt
+            
+            If brandName <> "" And Not currentBrandDict.exists(brandName) Then
+                currentBrandDict.Add brandName, Nothing
+            End If
+            
+            If productKey <> "" And Not currentProductDict.exists(productKey) Then
+                currentProductDict.Add productKey, Nothing
+            End If
+        End If
+        
+        ' 전월
+        If rowMonth = lastMonth Then
+            lastMonthSales = lastMonthSales + salesAmt
+            
+            If brandName <> "" And Not lastBrandDict.exists(brandName) Then
+                lastBrandDict.Add brandName, Nothing
+            End If
+            
+            If productKey <> "" And Not lastProductDict.exists(productKey) Then
+                lastProductDict.Add productKey, Nothing
+            End If
+        End If
+    Next i
+    
+    brandCount = currentBrandDict.Count
+    lastBrandCount = lastBrandDict.Count
+    productCount = currentProductDict.Count
+    lastProductCount = lastProductDict.Count
+    
+    ' 증감률 계산
+    If lastMonthSales > 0 Then
+        growthRate = ((currentMonthSales - lastMonthSales) / lastMonthSales) * 100
+    End If
+    
+    On Error GoTo 0
+    
+    ' KPI 카드 생성
+    Call 카드생성(wsDash, "A5:C7", "[총 판매액]", _
+                  Format(totalSales, "#,##0") & " 원", "", RGB(76, 175, 80))
+    
+    Dim growthText As String
+    Dim growthColor As Long
+    If growthRate > 0 Then
+        growthText = "▲ +" & Format(growthRate, "0.0") & "%"
+        growthColor = RGB(76, 175, 80)
+    ElseIf growthRate < 0 Then
+        growthText = "▼ " & Format(growthRate, "0.0") & "%"
+        growthColor = RGB(244, 67, 54)
+    Else
+        growthText = "변동 없음"
+        growthColor = RGB(150, 150, 150)
+    End If
+    
+    Call 카드생성(wsDash, "D5:F7", "[" & currentMonth & " 판매]", _
+                  Format(currentMonthSales, "#,##0") & " 원", growthText, growthColor)
+    
+    ' 브랜드 증감
+    Dim brandGrowth As String
+    Dim brandColor As Long
+    Dim brandDiff As Long
+    brandDiff = brandCount - lastBrandCount
+    
+    If brandDiff > 0 Then
+        brandGrowth = "▲ +" & brandDiff & "개"
+        brandColor = RGB(76, 175, 80)
+    ElseIf brandDiff < 0 Then
+        brandGrowth = "▼ " & brandDiff & "개"
+        brandColor = RGB(244, 67, 54)
+    Else
+        brandGrowth = "변동 없음"
+        brandColor = RGB(150, 150, 150)
+    End If
+    
+    Call 카드생성(wsDash, "G5:I7", "[총 브랜드 수]", _
+                  Format(brandCount, "#,##0") & " 개", brandGrowth, brandColor)
+    
+    ' 품목 증감
+    Dim productGrowth As String
+    Dim productColor As Long
+    Dim productDiff As Long
+    productDiff = productCount - lastProductCount
+    
+    If productDiff > 0 Then
+        productGrowth = "▲ +" & productDiff & "개"
+        productColor = RGB(76, 175, 80)
+    ElseIf productDiff < 0 Then
+        productGrowth = "▼ " & productDiff & "개"
+        productColor = RGB(244, 67, 54)
+    Else
+        productGrowth = "변동 없음"
+        productColor = RGB(150, 150, 150)
+    End If
+    
+    Call 카드생성(wsDash, "J5:L7", "[판매 품목 수]", _
+                  Format(productCount, "#,##0") & " 개", productGrowth, productColor)
+End Sub
+
+' 카드 생성 (완전 재설계)
+Private Sub 카드생성(ws As Worksheet, addr As String, title As String, _
+                     mainValue As String, subValue As String, color As Long)
+    
+    Dim baseRow As Long
+    Dim baseCol As Long
+    
+    ' 시작 위치
+    baseRow = ws.Range(addr).Row
+    baseCol = ws.Range(addr).Column
+    
+    ' 전체 테두리 및 배경
+    With ws.Range(addr)
+        .Interior.color = RGB(255, 255, 255)
+        .Borders.LineStyle = xlContinuous
+        .Borders.Weight = xlMedium
+        .Borders.color = RGB(220, 220, 220)
+    End With
+    
+    ' 제목 (첫 번째 행)
+    With ws.Range(ws.Cells(baseRow, baseCol), ws.Cells(baseRow, baseCol + 2))
+        .Merge
+        .value = title
+        .Font.Size = 9
+        .Font.color = RGB(100, 100, 100)
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+    End With
+    
+    ' 메인 값 (두 번째 행)
+    With ws.Range(ws.Cells(baseRow + 1, baseCol), ws.Cells(baseRow + 1, baseCol + 2))
+        .Merge
+        .value = mainValue
+        .Font.Size = 14
+        .Font.Bold = True
+        .Font.color = color
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+    End With
+    
+    ' 서브 값 (세 번째 행)
+    If subValue <> "" Then
+        With ws.Range(ws.Cells(baseRow + 2, baseCol), ws.Cells(baseRow + 2, baseCol + 2))
+            .Merge
+            .value = subValue
+            .Font.Size = 11
+            .Font.Bold = True
+            .Font.color = color
+            .HorizontalAlignment = xlCenter
+            .VerticalAlignment = xlCenter
+        End With
+    End If
+    
+    ' 행 높이 설정
+    ws.Rows(baseRow).RowHeight = 18
+    ws.Rows(baseRow + 1).RowHeight = 28
+    ws.Rows(baseRow + 2).RowHeight = 22
+End Sub
+
+' 자동 인사이트 생성 (셀 높이 개선)
+Private Sub 자동인사이트생성(wsDash As Worksheet, wsData As Worksheet, lastRow As Long)
+    ' 제목
+    With wsDash.Range("A10:L10")
+        .Merge
+        .value = "?? 자동 인사이트"
+        .Font.Size = 12
+        .Font.Bold = True
+        .Font.color = RGB(68, 114, 196)
+        .HorizontalAlignment = xlLeft
+        .VerticalAlignment = xlCenter
+        .RowHeight = 25
+    End With
+    
+    ' 인사이트 박스
+    With wsDash.Range("A11:L13")
+        .Merge
+        .Interior.color = RGB(232, 245, 233)
+        .Borders.LineStyle = xlContinuous
+        .Borders.color = RGB(76, 175, 80)
+        .Borders.Weight = xlMedium
+        .VerticalAlignment = xlTop
+        .WrapText = True
+    End With
+    
+    ' 인사이트 텍스트 생성
+    Dim insights As String
+    insights = 분석인사이트생성(wsData, lastRow)
+    
+    wsDash.Range("A11").value = insights
+    wsDash.Range("A11").Font.Size = 10
+    
+    ' 행 높이 자동 조정
+    wsDash.Rows("11:13").RowHeight = 60
+End Sub
+
+' 인사이트 텍스트 생성 (다양한 인사이트)
+Private Function 분석인사이트생성(wsData As Worksheet, lastRow As Long) As String
+    On Error Resume Next
+    
+    Dim insights As String
+    
+    ' 월 찾기
+    Dim monthDict As Object
+    Set monthDict = CreateObject("Scripting.Dictionary")
+    
+    Dim i As Long
+    For i = 2 To lastRow
+        Dim ym As String
+        ym = wsData.Cells(i, 14).value
+        If ym <> "" And Not monthDict.exists(ym) Then
+            monthDict.Add ym, 0
+        End If
+    Next i
+    
+    If monthDict.Count < 2 Then
+        insights = "?? 전월 데이터가 필요합니다. 2개월 이상 데이터가 있어야 비교 분석이 가능합니다."
+        분석인사이트생성 = insights
+        Exit Function
+    End If
+    
+    ' 월 정렬
+    Dim months() As Variant
+    months = monthDict.Keys
+    
+    Dim j As Long
+    Dim temp As Variant
+    For i = 0 To UBound(months) - 1
+        For j = i + 1 To UBound(months)
+            If months(i) > months(j) Then
+                temp = months(i)
+                months(i) = months(j)
+                months(j) = temp
+            End If
+        Next j
+    Next i
+    
+    Dim currentMonth As String
+    Dim lastMonth As String
+    currentMonth = months(UBound(months))
+    lastMonth = months(UBound(months) - 1)
+    
+    ' 브랜드별 집계
+    Dim brandCurrentDict As Object
+    Dim brandLastDict As Object
+    Set brandCurrentDict = CreateObject("Scripting.Dictionary")
+    Set brandLastDict = CreateObject("Scripting.Dictionary")
+    
+    For i = 2 To lastRow
+        Dim brandName As String
+        Dim rowMonth As String
+        Dim salesAmt As Double
+        
+        brandName = Trim(CStr(wsData.Cells(i, 3).value))
+        rowMonth = wsData.Cells(i, 14).value
+        salesAmt = wsData.Cells(i, 7).value
+        
+        If brandName <> "" Then
+            If rowMonth = currentMonth Then
+                If brandCurrentDict.exists(brandName) Then
+                    brandCurrentDict(brandName) = brandCurrentDict(brandName) + salesAmt
+                Else
+                    brandCurrentDict.Add brandName, salesAmt
+                End If
+            End If
+            
+            If rowMonth = lastMonth Then
+                If brandLastDict.exists(brandName) Then
+                    brandLastDict(brandName) = brandLastDict(brandName) + salesAmt
+                Else
+                    brandLastDict.Add brandName, salesAmt
+                End If
+            End If
+        End If
+    Next i
+    
+    ' TOP 3 성장
+    Dim growthList As Object
+    Set growthList = CreateObject("Scripting.Dictionary")
+    
+    Dim key As Variant
+    For Each key In brandCurrentDict.Keys
+        If brandLastDict.exists(key) Then
+            Dim curr As Double
+            Dim last As Double
+            curr = brandCurrentDict(key)
+            last = brandLastDict(key)
+            
+            If last > 0 Then
+                Dim rate As Double
+                rate = ((curr - last) / last) * 100
+                growthList.Add key, rate
+            End If
+        End If
+    Next key
+    
+    ' 정렬
+    If growthList.Count > 0 Then
+        Dim brands As Variant
+        Dim rates As Variant
+        brands = growthList.Keys
+        rates = growthList.items
+        
+        For i = 0 To UBound(brands) - 1
+            For j = i + 1 To UBound(brands)
+                If rates(i) < rates(j) Then
+                    temp = brands(i)
+                    brands(i) = brands(j)
+                    brands(j) = temp
+                    
+                    Dim tempRate As Variant
+                    tempRate = rates(i)
+                    rates(i) = rates(j)
+                    rates(j) = tempRate
+                End If
+            Next j
+        Next i
+        
+        ' TOP 3 성장
+        insights = "?? [성장 브랜드 TOP3]" & vbCrLf
+        Dim topCount As Long
+        topCount = Application.WorksheetFunction.Min(3, UBound(brands) + 1)
+        
+        For i = 0 To topCount - 1
+            insights = insights & "  " & (i + 1) & ". " & brands(i) & " (+" & Format(rates(i), "0.0") & "%)" & vbCrLf
+        Next i
+        
+        ' 하락 브랜드
+        insights = insights & vbCrLf & "?? [하락 브랜드]" & vbCrLf
+        Dim declineCount As Long
+        declineCount = 0
+        
+        For i = UBound(brands) To 0 Step -1
+            If rates(i) < -5 And declineCount < 2 Then
+                insights = insights & "  ? " & brands(i) & " (" & Format(rates(i), "0.0") & "%)" & vbCrLf
+                declineCount = declineCount + 1
+            End If
+        Next i
+        
+        If declineCount = 0 Then
+            insights = insights & "  ? 없음 (양호)" & vbCrLf
+        End If
+    End If
+    
+    On Error GoTo 0
+    
+    If insights = "" Then
+        insights = "?? 분석 중..."
+    End If
+    
+    분석인사이트생성 = insights
+End Function
+' 월간 추이 생성 (증감률 % 표시 개선)
+Private Sub 월간추이생성(wsDash As Worksheet, wsData As Worksheet, lastRow As Long)
+    On Error GoTo ErrorHandler
+    
+    ' 제목
+    wsDash.Range("A15").value = "[월간 판매 추이] (최근 12개월)"
+    wsDash.Range("A15").Font.Size = 12
+    wsDash.Range("A15").Font.Bold = True
+    wsDash.Range("A15").Font.color = RGB(68, 114, 196)
+    
+    ' 헤더
+    wsDash.Range("A17").value = "년월"
+    wsDash.Range("B17").value = "판매액"
+    wsDash.Range("C17").value = "전월 대비"
+    
+    With wsDash.Range("A17:C17")
+        .Font.Bold = True
+        .Interior.color = RGB(68, 114, 196)
+        .Font.color = RGB(255, 255, 255)
+        .HorizontalAlignment = xlCenter
+    End With
+    
+    ' 월별 집계
+    Dim monthDict As Object
+    Set monthDict = CreateObject("Scripting.Dictionary")
+    
+    Dim i As Long
+    For i = 2 To lastRow
+        Dim yearMonth As String
+        Dim salesAmt As Double
+        
+        On Error Resume Next
+        yearMonth = wsData.Cells(i, 14).value
+        salesAmt = wsData.Cells(i, 7).value
+        On Error GoTo ErrorHandler
+        
+        If yearMonth <> "" Then
+            If monthDict.exists(yearMonth) Then
+                monthDict(yearMonth) = monthDict(yearMonth) + salesAmt
+            Else
+                monthDict.Add yearMonth, salesAmt
+            End If
+        End If
+    Next i
+    
+    ' 데이터 없으면 종료
+    If monthDict.Count = 0 Then
+        wsDash.Range("A18").value = "데이터 없음"
+        Exit Sub
+    End If
+    
+    ' 배열로 변환
+    Dim sortedMonths() As Variant
+    Dim sortedSales() As Variant
+    sortedMonths = monthDict.Keys
+    sortedSales = monthDict.items
+    
+    ' 정렬
+    Dim j As Long
+    Dim tempMonth As Variant
+    Dim tempSales As Variant
+    
+    For i = 0 To UBound(sortedMonths) - 1
+        For j = i + 1 To UBound(sortedMonths)
+            If sortedMonths(i) > sortedMonths(j) Then
+                tempMonth = sortedMonths(i)
+                sortedMonths(i) = sortedMonths(j)
+                sortedMonths(j) = tempMonth
+                
+                tempSales = sortedSales(i)
+                sortedSales(i) = sortedSales(j)
+                sortedSales(j) = tempSales
+            End If
+        Next j
+    Next i
+    
+    ' 최근 12개월
+    Dim startIdx As Long
+    If UBound(sortedMonths) >= 11 Then
+        startIdx = UBound(sortedMonths) - 11
+    Else
+        startIdx = 0
+    End If
+    
+    ' 데이터 출력
+    Dim displayRow As Long
+    displayRow = 18
+    
+    For i = startIdx To UBound(sortedMonths)
+        wsDash.Cells(displayRow, 1).value = sortedMonths(i)
+        wsDash.Cells(displayRow, 2).value = Format(sortedSales(i), "#,##0")
+        
+        ' 증감률 계산
+        If i > startIdx Then
+            If sortedSales(i - 1) > 0 Then
+                Dim monthGrowth As Double
+                monthGrowth = ((sortedSales(i) - sortedSales(i - 1)) / sortedSales(i - 1)) * 100
+                
+                If monthGrowth > 0 Then
+                    wsDash.Cells(displayRow, 3).value = "▲ +" & Format(monthGrowth, "0.0") & "%"
+                    wsDash.Cells(displayRow, 3).Font.color = RGB(76, 175, 80)
+                    wsDash.Cells(displayRow, 3).Font.Bold = True
+                ElseIf monthGrowth < 0 Then
+                    wsDash.Cells(displayRow, 3).value = "▼ " & Format(monthGrowth, "0.0") & "%"
+                    wsDash.Cells(displayRow, 3).Font.color = RGB(244, 67, 54)
+                    wsDash.Cells(displayRow, 3).Font.Bold = True
+                Else
+                    wsDash.Cells(displayRow, 3).value = "0.0%"
+                    wsDash.Cells(displayRow, 3).Font.color = RGB(150, 150, 150)
+                End If
+            End If
+        End If
+        
+        ' 교차 배경
+        If (displayRow - 18) Mod 2 = 0 Then
+            wsDash.Range("A" & displayRow & ":C" & displayRow).Interior.color = RGB(245, 245, 245)
+        End If
+        
+        displayRow = displayRow + 1
+    Next i
+    
+    ' 테두리
+    If displayRow > 18 Then
+        wsDash.Range("A17:C" & (displayRow - 1)).Borders.LineStyle = xlContinuous
+        wsDash.Range("A17:C" & (displayRow - 1)).Borders.color = RGB(200, 200, 200)
+    End If
+    
+    ' 열 너비
+    wsDash.Columns("A:D").ColumnWidth = 13
+    
+    Exit Sub
+    
+ErrorHandler:
+    wsDash.Range("A18").value = "오류: " & Err.Description
+End Sub
+' 브랜드 성과 분석 생성 (전월 대비 증감%)
+Private Sub 브랜드성과분석생성(wsDash As Worksheet, wsData As Worksheet, lastRow As Long)
+    ' 제목
+    wsDash.Range("E15").value = "[브랜드 성과 분석]"
+    wsDash.Range("E15").Font.Size = 12
+    wsDash.Range("E15").Font.Bold = True
+    wsDash.Range("E15").Font.color = RGB(68, 114, 196)
+    
+    ' 헤더
+    wsDash.Range("E17").value = "순위"
+    wsDash.Range("F17").value = "브랜드"
+    wsDash.Range("G17").value = "판매액"
+    wsDash.Range("H17").value = "전월 대비"
+    
+    With wsDash.Range("E17:H17")
+        .Font.Bold = True
+        .Interior.color = RGB(68, 114, 196)
+        .Font.color = RGB(255, 255, 255)
+        .HorizontalAlignment = xlCenter
+    End With
+    
+    ' 월 찾기
+    Dim monthDict As Object
+    Set monthDict = CreateObject("Scripting.Dictionary")
+    
+    Dim i As Long
+    For i = 2 To lastRow
+        Dim ym As String
+        ym = wsData.Cells(i, 14).value
+        If ym <> "" And Not monthDict.exists(ym) Then
+            monthDict.Add ym, 0
+        End If
+    Next i
+    
+    Dim months() As Variant
+    months = monthDict.Keys
+    
+    Dim j As Long
+    Dim temp As Variant
+    For i = 0 To UBound(months) - 1
+        For j = i + 1 To UBound(months)
+            If months(i) > months(j) Then
+                temp = months(i)
+                months(i) = months(j)
+                months(j) = temp
+            End If
+        Next j
+    Next i
+    
+    Dim currentMonth As String
+    Dim lastMonth As String
+    currentMonth = months(UBound(months))
+    If UBound(months) >= 1 Then
+        lastMonth = months(UBound(months) - 1)
+    End If
+    
+    ' 브랜드별 집계
+    Dim brandCurrentDict As Object
+    Dim brandLastDict As Object
+    Set brandCurrentDict = CreateObject("Scripting.Dictionary")
+    Set brandLastDict = CreateObject("Scripting.Dictionary")
+    
+    For i = 2 To lastRow
+        Dim brandName As String
+        Dim rowMonth As String
+        Dim salesAmt As Double
+        
+        brandName = Trim(CStr(wsData.Cells(i, 3).value))
+        rowMonth = wsData.Cells(i, 14).value
+        salesAmt = wsData.Cells(i, 7).value
+        
+        If brandName <> "" Then
+            If rowMonth = currentMonth Then
+                If brandCurrentDict.exists(brandName) Then
+                    brandCurrentDict(brandName) = brandCurrentDict(brandName) + salesAmt
+                Else
+                    brandCurrentDict.Add brandName, salesAmt
+                End If
+            End If
+            
+            If rowMonth = lastMonth Then
+                If brandLastDict.exists(brandName) Then
+                    brandLastDict(brandName) = brandLastDict(brandName) + salesAmt
+                Else
+                    brandLastDict.Add brandName, salesAmt
+                End If
+            End If
+        End If
+    Next i
+    
+    If brandCurrentDict.Count = 0 Then
+        wsDash.Range("E18").value = "데이터 없음"
+        Exit Sub
+    End If
+    
+    ' 정렬
+    Dim sortedBrands As Variant
+    Dim sortedValues As Variant
+    sortedBrands = brandCurrentDict.Keys
+    sortedValues = brandCurrentDict.items
+    
+    Dim tempKey As Variant
+    Dim tempVal As Variant
+    
+    For i = LBound(sortedBrands) To UBound(sortedBrands) - 1
+        For j = i + 1 To UBound(sortedBrands)
+            If sortedValues(i) < sortedValues(j) Then
+                tempKey = sortedBrands(i)
+                sortedBrands(i) = sortedBrands(j)
+                sortedBrands(j) = tempKey
+                
+                tempVal = sortedValues(i)
+                sortedValues(i) = sortedValues(j)
+                sortedValues(j) = tempVal
+            End If
+        Next j
+    Next i
+    
+    ' TOP 10 출력
+    Dim topCount As Long
+    topCount = Application.WorksheetFunction.Min(10, UBound(sortedBrands) + 1)
+    
+    For i = 0 To topCount - 1
+        Dim rowNum As Long
+        rowNum = 18 + i
+        
+        wsDash.Cells(rowNum, 5).value = i + 1
+        wsDash.Cells(rowNum, 6).value = sortedBrands(i)
+        wsDash.Cells(rowNum, 7).value = Format(sortedValues(i), "#,##0")
+        
+        ' 증감% 계산
+        If brandLastDict.exists(sortedBrands(i)) Then
+            Dim curr As Double
+            Dim last As Double
+            curr = sortedValues(i)
+            last = brandLastDict(sortedBrands(i))
+            
+            If last > 0 Then
+                Dim growthRate As Double
+                growthRate = ((curr - last) / last) * 100
+                
+                If growthRate > 0 Then
+                    wsDash.Cells(rowNum, 8).value = "▲ " & Format(growthRate, "0.0") & "%"
+                    wsDash.Cells(rowNum, 8).Font.color = RGB(76, 175, 80)
+                ElseIf growthRate < 0 Then
+                    wsDash.Cells(rowNum, 8).value = "▼ " & Format(growthRate, "0.0") & "%"
+                    wsDash.Cells(rowNum, 8).Font.color = RGB(244, 67, 54)
+                Else
+                    wsDash.Cells(rowNum, 8).value = "0.0%"
+                    wsDash.Cells(rowNum, 8).Font.color = RGB(150, 150, 150)
+                End If
+            End If
+        Else
+            wsDash.Cells(rowNum, 8).value = "신규"
+            wsDash.Cells(rowNum, 8).Font.color = RGB(33, 150, 243)
+        End If
+        
+        ' 교차 배경
+        If i Mod 2 = 0 Then
+            wsDash.Range("E" & rowNum & ":H" & rowNum).Interior.color = RGB(245, 245, 245)
+        End If
+        
+        ' TOP 3 강조
+        If i < 3 Then
+            wsDash.Cells(rowNum, 5).Interior.color = RGB(255, 235, 59)
+            wsDash.Cells(rowNum, 5).Font.Bold = True
+        End If
+    Next i
+    
+    ' 테두리
+    wsDash.Range("E17:H" & (17 + topCount)).Borders.LineStyle = xlContinuous
+    wsDash.Range("E17:H" & (17 + topCount)).Borders.color = RGB(200, 200, 200)
+    
+    ' 열 너비
+    wsDash.Columns("E:E").ColumnWidth = 6
+    wsDash.Columns("F:F").ColumnWidth = 15
+    wsDash.Columns("G:H").ColumnWidth = 12
+End Sub
+
+' 주간 추이 생성 (판매량 삭제, 전월 대비 증감% 추가)
+Private Sub 주간추이생성(wsDash As Worksheet, wsData As Worksheet, lastRow As Long)
+    ' 제목
+    wsDash.Range("A32").value = "[주간 판매 추이]"
+    wsDash.Range("A32").Font.Size = 12
+    wsDash.Range("A32").Font.Bold = True
+    wsDash.Range("A32").Font.color = RGB(68, 114, 196)
+    
+    ' 헤더
+    wsDash.Range("A34").value = "주차"
+    wsDash.Range("B34").value = "판매액"
+    wsDash.Range("C34").value = "전월 동주"
+    
+    With wsDash.Range("A34:C34")
+        .Font.Bold = True
+        .Interior.color = RGB(68, 114, 196)
+        .Font.color = RGB(255, 255, 255)
+        .HorizontalAlignment = xlCenter
+    End With
+    
+    ' 월 찾기
+    Dim monthDict As Object
+    Set monthDict = CreateObject("Scripting.Dictionary")
+    
+    Dim i As Long
+    For i = 2 To lastRow
+        Dim ym As String
+        ym = wsData.Cells(i, 14).value
+        If ym <> "" And Not monthDict.exists(ym) Then
+            monthDict.Add ym, 0
+        End If
+    Next i
+    
+    Dim months() As Variant
+    months = monthDict.Keys
+    
+    Dim j As Long
+    Dim temp As Variant
+    For i = 0 To UBound(months) - 1
+        For j = i + 1 To UBound(months)
+            If months(i) > months(j) Then
+                temp = months(i)
+                months(i) = months(j)
+                months(j) = temp
+            End If
+        Next j
+    Next i
+    
+    Dim currentMonth As String
+    Dim lastMonth As String
+    currentMonth = months(UBound(months))
+    If UBound(months) >= 1 Then
+        lastMonth = months(UBound(months) - 1)
+    End If
+    
+    ' 주차별 집계 (현재 월)
+    Dim w1CurrSales As Double, w2CurrSales As Double, w3CurrSales As Double
+    Dim w1LastSales As Double, w2LastSales As Double, w3LastSales As Double
+    
+    Dim weekKey As String
+    Dim rowMonth As String
+    Dim salesAmt As Double
+    
+    For i = 2 To lastRow
+        weekKey = Trim(CStr(wsData.Cells(i, 13).value))
+        rowMonth = wsData.Cells(i, 14).value
+        
+        On Error Resume Next
+        salesAmt = CDbl(wsData.Cells(i, 7).value)
+        On Error GoTo 0
+        
+        If rowMonth = currentMonth Then
+            Select Case weekKey
+                Case "W1": w1CurrSales = w1CurrSales + salesAmt
+                Case "W2": w2CurrSales = w2CurrSales + salesAmt
+                Case "W3": w3CurrSales = w3CurrSales + salesAmt
+            End Select
+        ElseIf rowMonth = lastMonth Then
+            Select Case weekKey
+                Case "W1": w1LastSales = w1LastSales + salesAmt
+                Case "W2": w2LastSales = w2LastSales + salesAmt
+                Case "W3": w3LastSales = w3LastSales + salesAmt
+            End Select
+        End If
+    Next i
+    
+    ' W1 출력
+    wsDash.Range("A35").value = "W1 (1-10일)"
+    wsDash.Range("B35").value = Format(w1CurrSales, "#,##0")
+    
+    If w1LastSales > 0 Then
+        Dim w1Growth As Double
+        w1Growth = ((w1CurrSales - w1LastSales) / w1LastSales) * 100
+        
+        If w1Growth > 0 Then
+            wsDash.Range("C35").value = "▲ " & Format(w1Growth, "0.0") & "%"
+            wsDash.Range("C35").Font.color = RGB(76, 175, 80)
+        ElseIf w1Growth < 0 Then
+            wsDash.Range("C35").value = "▼ " & Format(w1Growth, "0.0") & "%"
+            wsDash.Range("C35").Font.color = RGB(244, 67, 54)
+        Else
+            wsDash.Range("C35").value = "0.0%"
+        End If
+    Else
+        wsDash.Range("C35").value = "-"
+    End If
+    
+    ' W2 출력
+    wsDash.Range("A36").value = "W2 (11-20일)"
+    wsDash.Range("B36").value = Format(w2CurrSales, "#,##0")
+    
+    If w2LastSales > 0 Then
+        Dim w2Growth As Double
+        w2Growth = ((w2CurrSales - w2LastSales) / w2LastSales) * 100
+        
+        If w2Growth > 0 Then
+            wsDash.Range("C36").value = "▲ " & Format(w2Growth, "0.0") & "%"
+            wsDash.Range("C36").Font.color = RGB(76, 175, 80)
+        ElseIf w2Growth < 0 Then
+            wsDash.Range("C36").value = "▼ " & Format(w2Growth, "0.0") & "%"
+            wsDash.Range("C36").Font.color = RGB(244, 67, 54)
+        Else
+            wsDash.Range("C36").value = "0.0%"
+        End If
+    Else
+        wsDash.Range("C36").value = "-"
+    End If
+    
+    ' W3 출력
+    wsDash.Range("A37").value = "W3 (21-말일)"
+    wsDash.Range("B37").value = Format(w3CurrSales, "#,##0")
+    
+    If w3LastSales > 0 Then
+        Dim w3Growth As Double
+        w3Growth = ((w3CurrSales - w3LastSales) / w3LastSales) * 100
+        
+        If w3Growth > 0 Then
+            wsDash.Range("C37").value = "▲ " & Format(w3Growth, "0.0") & "%"
+            wsDash.Range("C37").Font.color = RGB(76, 175, 80)
+        ElseIf w3Growth < 0 Then
+            wsDash.Range("C37").value = "▼ " & Format(w3Growth, "0.0") & "%"
+            wsDash.Range("C37").Font.color = RGB(244, 67, 54)
+        Else
+            wsDash.Range("C37").value = "0.0%"
+        End If
+    Else
+        wsDash.Range("C37").value = "-"
+    End If
+    
+    ' 교차 배경
+    wsDash.Range("A35:C35").Interior.color = RGB(245, 245, 245)
+    wsDash.Range("A37:C37").Interior.color = RGB(245, 245, 245)
+    
+    ' 테두리
+    wsDash.Range("A34:C37").Borders.LineStyle = xlContinuous
+    wsDash.Range("A34:C37").Borders.color = RGB(200, 200, 200)
+    
+    ' 열 너비
+    wsDash.Columns("A:C").ColumnWidth = 12
+End Sub
+
+' 대응 방안 생성 (구체적인 브랜드/제품/수치)
+Private Sub 추천액션생성(wsDash As Worksheet, wsData As Worksheet, lastRow As Long)
+    ' 제목
+    wsDash.Range("E32").value = "[대응 방안]"
+    wsDash.Range("E32").Font.Size = 12
+    wsDash.Range("E32").Font.Bold = True
+    wsDash.Range("E32").Font.color = RGB(255, 152, 0)
+    
+    ' 액션 박스
+    With wsDash.Range("E33:H37")
+        .Merge
+        .Interior.color = RGB(255, 243, 224)
+        .Borders.LineStyle = xlContinuous
+        .Borders.color = RGB(255, 152, 0)
+        .Borders.Weight = xlMedium
+        .VerticalAlignment = xlTop
+        .WrapText = True
+    End With
+    
+    ' 월 찾기
+    Dim monthDict As Object
+    Set monthDict = CreateObject("Scripting.Dictionary")
+    
+    Dim i As Long
+    For i = 2 To lastRow
+        Dim ym As String
+        ym = wsData.Cells(i, 14).value
+        If ym <> "" And Not monthDict.exists(ym) Then
+            monthDict.Add ym, 0
+        End If
+    Next i
+    
+    If monthDict.Count < 2 Then
+        wsDash.Range("E33").value = "? 전월 데이터가 부족하여 분석할 수 없습니다." & vbCrLf & _
+                                    "? 2개월 이상 데이터가 필요합니다."
+        wsDash.Range("E33").Font.Size = 10
+        Exit Sub
+    End If
+    
+    Dim months() As Variant
+    months = monthDict.Keys
+    
+    Dim j As Long
+    Dim temp As Variant
+    For i = 0 To UBound(months) - 1
+        For j = i + 1 To UBound(months)
+            If months(i) > months(j) Then
+                temp = months(i)
+                months(i) = months(j)
+                months(j) = temp
+            End If
+        Next j
+    Next i
+    
+    Dim currentMonth As String
+    Dim lastMonth As String
+    currentMonth = months(UBound(months))
+    lastMonth = months(UBound(months) - 1)
+    
+    ' 브랜드별 집계
+    Dim brandCurrentDict As Object
+    Dim brandLastDict As Object
+    Set brandCurrentDict = CreateObject("Scripting.Dictionary")
+    Set brandLastDict = CreateObject("Scripting.Dictionary")
+    
+    For i = 2 To lastRow
+        Dim brandName As String
+        Dim rowMonth As String
+        Dim salesAmt As Double
+        
+        brandName = Trim(CStr(wsData.Cells(i, 3).value))
+        rowMonth = wsData.Cells(i, 14).value
+        salesAmt = wsData.Cells(i, 7).value
+        
+        If brandName <> "" Then
+            If rowMonth = currentMonth Then
+                If brandCurrentDict.exists(brandName) Then
+                    brandCurrentDict(brandName) = brandCurrentDict(brandName) + salesAmt
+                Else
+                    brandCurrentDict.Add brandName, salesAmt
+                End If
+            End If
+            
+            If rowMonth = lastMonth Then
+                If brandLastDict.exists(brandName) Then
+                    brandLastDict(brandName) = brandLastDict(brandName) + salesAmt
+                Else
+                    brandLastDict.Add brandName, salesAmt
+                End If
+            End If
+        End If
+    Next i
+    
+    ' 성장/하락 찾기
+    Dim topGrowthBrand As String
+    Dim topGrowthRate As Double
+    Dim topDeclineBrand As String
+    Dim topDeclineRate As Double
+    
+    topGrowthRate = -999999
+    topDeclineRate = 999999
+    
+    Dim key As Variant
+    For Each key In brandCurrentDict.Keys
+        If brandLastDict.exists(key) Then
+            Dim curr As Double
+            Dim last As Double
+            curr = brandCurrentDict(key)
+            last = brandLastDict(key)
+            
+            If last > 0 Then
+                Dim rate As Double
+                rate = ((curr - last) / last) * 100
+                
+                If rate > topGrowthRate Then
+                    topGrowthRate = rate
+                    topGrowthBrand = key
+                End If
+                
+                If rate < topDeclineRate Then
+                    topDeclineRate = rate
+                    topDeclineBrand = key
+                End If
+            End If
+        End If
+    Next key
+    
+    ' 대응 방안 생성
+    Dim actions As String
+    actions = ""
+    
+    If topGrowthBrand <> "" And topGrowthRate > 10 Then
+        actions = actions & "? [재고 확보 필요]" & vbCrLf
+        actions = actions & "  ? 브랜드: " & topGrowthBrand & vbCrLf
+        actions = actions & "  ? 증가율: +" & Format(topGrowthRate, "0.0") & "%" & vbCrLf
+        actions = actions & "  ? 조치: 즉시 발주 검토" & vbCrLf & vbCrLf
+    End If
+    
+    If topDeclineBrand <> "" And topDeclineRate < -10 Then
+        actions = actions & "?? [판촉 지원 필요]" & vbCrLf
+        actions = actions & "  ? 브랜드: " & topDeclineBrand & vbCrLf
+        actions = actions & "  ? 감소율: " & Format(topDeclineRate, "0.0") & "%" & vbCrLf
+        actions = actions & "  ? 조치: 프로모션 기획" & vbCrLf & vbCrLf
+    End If
+    
+    If topGrowthRate < 5 And topDeclineRate > -5 Then
+        actions = actions & "?? [안정적 운영]" & vbCrLf
+        actions = actions & "  ? 현 상태 유지 권장"
+    End If
+    
+    If actions = "" Then
+        actions = "? 데이터 분석 중..."
+    End If
+    
+    wsDash.Range("E33").value = actions
+    wsDash.Range("E33").Font.Size = 9
+    
+    ' 행 높이
+    wsDash.Rows("33:37").RowHeight = 18
+End Sub
+

@@ -1,0 +1,245 @@
+Attribute VB_Name = "mdl_Accumulated"
+Option Explicit
+
+' ========================================
+' 모듈: mdl_Accumulated
+' 설명: 누적 데이터 자동 병합 관리
+' ========================================
+
+' 통합시트 데이터를 누적 시트에 추가
+Public Sub AppendToAccumulatedData(wsSource As Worksheet)
+    On Error GoTo ErrorHandler
+    
+    Dim wsAccum As Worksheet
+    Dim lastRowSource As Long
+    Dim lastRowAccum As Long
+    Dim sourceRange As Range
+    
+    ' 누적데이터 시트 확인/생성
+    On Error Resume Next
+    Set wsAccum = ThisWorkbook.Sheets(SHEET_누적데이터)
+    On Error GoTo ErrorHandler
+    
+    If wsAccum Is Nothing Then
+        Set wsAccum = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+        wsAccum.Name = SHEET_누적데이터
+        
+        ' 헤더 복사
+        wsSource.Range("A1:K1").Copy
+        wsAccum.Range("A1").PasteSpecial Paste:=xlPasteValues
+        
+        ' 서식 복사
+        wsSource.Range("A1:K1").Copy
+        wsAccum.Range("A1").PasteSpecial Paste:=xlPasteFormats
+        
+        lastRowAccum = 1
+    Else
+        lastRowAccum = wsAccum.Cells(wsAccum.Rows.Count, 1).End(xlUp).Row
+    End If
+    
+    ' 소스 데이터 범위
+    lastRowSource = wsSource.Cells(wsSource.Rows.Count, 1).End(xlUp).Row
+    
+    If lastRowSource > 1 Then
+        ' 데이터 복사 (헤더 제외)
+        Set sourceRange = wsSource.Range("A2:K" & lastRowSource)
+        sourceRange.Copy
+        wsAccum.Cells(lastRowAccum + 1, 1).PasteSpecial Paste:=xlPasteValues
+        
+        Application.CutCopyMode = False
+        
+        ' 중복 제거 (선택사항)
+        If GetSetting(SET_중복검증) = "O" Then
+            RemoveDuplicates wsAccum
+        End If
+        
+        ' 정렬
+        SortAccumulatedData wsAccum
+        
+        ' 서식 적용
+        FormatAccumulatedSheet wsAccum
+    End If
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "누적 데이터 추가 중 오류: " & Err.Description, vbExclamation
+End Sub
+
+' 중복 데이터 제거
+Private Sub RemoveDuplicates(ws As Worksheet)
+    On Error Resume Next
+    
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    
+    If lastRow > 1 Then
+        ' Excel 2007 이상의 중복 제거 기능 사용
+        ws.Range("A1:K" & lastRow).RemoveDuplicates _
+            Columns:=Array(1, 2, 3, 6), _
+            Header:=xlYes
+            ' 판매일(1), 판매매장(2), 브랜드(3), 상품명(6) 기준
+    End If
+End Sub
+
+' 누적 데이터 정렬
+Private Sub SortAccumulatedData(ws As Worksheet)
+    Dim lastRow As Long
+    
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    
+    If lastRow > 1 Then
+        With ws.Sort
+            .SortFields.Clear
+            
+            ' 1차: 판매일
+            .SortFields.Add key:=ws.Range("A2:A" & lastRow), _
+                            SortOn:=xlSortOnValues, _
+                            Order:=xlDescending, _
+                            DataOption:=xlSortNormal
+            
+            ' 2차: 브랜드
+            .SortFields.Add key:=ws.Range("C2:C" & lastRow), _
+                            SortOn:=xlSortOnValues, _
+                            Order:=xlAscending, _
+                            DataOption:=xlSortNormal
+            
+            .SetRange ws.Range("A1:K" & lastRow)
+            .Header = xlYes
+            .Apply
+        End With
+    End If
+End Sub
+
+' 누적 시트 서식
+Private Sub FormatAccumulatedSheet(ws As Worksheet)
+    Dim lastRow As Long
+    
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    
+    With ws
+        ' 헤더 고정 (Select 없이)
+        On Error Resume Next
+        .Activate
+        ActiveWindow.SplitRow = 1
+        ActiveWindow.FreezePanes = True
+        On Error GoTo 0
+        
+        ' 헤더 서식
+        .Range("A1:K1").Font.Bold = True
+        .Range("A1:K1").Interior.color = RGB(68, 114, 196)
+        .Range("A1:K1").Font.color = RGB(255, 255, 255)
+        .Range("A1:K1").HorizontalAlignment = xlCenter
+        
+        ' 데이터 서식
+        .Range("A2:K" & lastRow).HorizontalAlignment = xlCenter
+        .Range("F2:F" & lastRow).HorizontalAlignment = xlLeft ' 상품명
+        
+        ' 숫자 서식
+        .Range("A2:A" & lastRow).NumberFormat = "yyyy-mm-dd"
+        .Range("D2:D" & lastRow).NumberFormat = "0"
+        .Range("I2:I" & lastRow).NumberFormat = "#,##0"
+        
+        ' 자동 필터
+        On Error Resume Next
+        .Range("A1:K1").AutoFilter
+        On Error GoTo 0
+        
+        ' 자동 맞춤
+        .Cells.EntireColumn.AutoFit
+    End With
+End Sub
+
+' 누적 데이터 요약 보고서 생성 (보너스 기능)
+Public Sub CreateAccumulatedSummary()
+    On Error GoTo ErrorHandler
+    
+    Dim wsAccum As Worksheet
+    Dim wsSummary As Worksheet
+    Dim lastRow As Long
+    
+    Set wsAccum = ThisWorkbook.Sheets(SHEET_누적데이터)
+    
+    ' 요약 시트 생성
+    On Error Resume Next
+    Set wsSummary = ThisWorkbook.Sheets("누적데이터요약")
+    On Error GoTo ErrorHandler
+    
+    If Not wsSummary Is Nothing Then
+        Application.DisplayAlerts = False
+        wsSummary.Delete
+        Application.DisplayAlerts = True
+    End If
+    
+    Set wsSummary = ThisWorkbook.Sheets.Add(After:=wsAccum)
+    wsSummary.Name = "누적데이터요약"
+    
+    ' 전체 기간 요약 생성
+    CreateOverallPeriodSummary wsSummary, wsAccum
+    
+    ' 월별 추이 차트
+    CreateMonthlyTrendChart wsSummary, wsAccum
+    
+    ' 브랜드별 누적 현황
+    CreateBrandAccumulatedSummary wsSummary, wsAccum
+    
+    MsgBox "누적 데이터 요약 보고서가 생성되었습니다!", vbInformation
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "누적 요약 생성 중 오류: " & Err.Description, vbCritical
+End Sub
+
+' 전체 기간 요약
+Private Sub CreateOverallPeriodSummary(wsSummary As Worksheet, wsAccum As Worksheet)
+    Dim lastRow As Long
+    Dim minDate As Date, maxDate As Date
+    Dim totalQty As Long, totalAmt As Currency
+    Dim uniqueBrands As Long, uniqueProducts As Long
+    
+    lastRow = wsAccum.Cells(wsAccum.Rows.Count, 1).End(xlUp).Row
+    
+    If lastRow < 2 Then Exit Sub
+    
+    minDate = Application.WorksheetFunction.Min(wsAccum.Range("A2:A" & lastRow))
+    maxDate = Application.WorksheetFunction.Max(wsAccum.Range("A2:A" & lastRow))
+    totalQty = Application.WorksheetFunction.Sum(wsAccum.Range("D2:D" & lastRow))
+    totalAmt = Application.WorksheetFunction.Sum(wsAccum.Range("I2:I" & lastRow))
+    
+    With wsSummary
+        .Cells(1, 1).value = "누적 판매 데이터 요약"
+        .Cells(1, 1).Font.Size = 16
+        .Cells(1, 1).Font.Bold = True
+        
+        .Cells(3, 1).value = "데이터 기간"
+        .Cells(3, 2).value = Format(minDate, "yyyy-mm-dd") & " ~ " & Format(maxDate, "yyyy-mm-dd")
+        
+        .Cells(4, 1).value = "총 판매수량"
+        .Cells(4, 2).value = totalQty
+        .Cells(4, 2).NumberFormat = "#,##0 개"
+        
+        .Cells(5, 1).value = "총 판매금액"
+        .Cells(5, 2).value = totalAmt
+        .Cells(5, 2).NumberFormat = "#,##0 원"
+        
+        .Cells(6, 1).value = "평균 단가"
+        .Cells(6, 2).value = totalAmt / totalQty
+        .Cells(6, 2).NumberFormat = "#,##0 원"
+        
+        .Cells(7, 1).value = "데이터 건수"
+        .Cells(7, 2).value = lastRow - 1
+        .Cells(7, 2).NumberFormat = "#,##0 건"
+    End With
+End Sub
+
+' 월별 추이 차트
+Private Sub CreateMonthlyTrendChart(wsSummary As Worksheet, wsAccum As Worksheet)
+    ' 구현 생략 (복잡도 높음, 필요시 추가)
+End Sub
+
+' 브랜드별 누적 현황
+Private Sub CreateBrandAccumulatedSummary(wsSummary As Worksheet, wsAccum As Worksheet)
+    ' 구현 생략 (복잡도 높음, 필요시 추가)
+End Sub
+
