@@ -1,0 +1,24 @@
+{
+  "name": "auto-brodcasting-helper",
+  "version": "1.0.0",
+  "description": "Grip Live Chat Auto Responder & Analyzer",
+  "main": "backend/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node backend/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "localtunnel": "^2.0.2",
+    "playwright": "^1.58.1",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.6",
+    "ws": "^8.16.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}

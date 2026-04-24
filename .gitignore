@@ -1,0 +1,58 @@
+# ── Node.js ──────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-error.log
+
+# ── Build Output ──────────────────────────────
+dist/
+build/
+.vite/
+
+# ── Database & Uploads ────────────────────────
+*.sqlite
+*.db
+uploads/
+
+# ── Environment / Secrets ─────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Debug / Dump / Log Files ──────────────────
+*.log
+grip-signals*.log
+live_test_dump.html
+manual_dump.html
+snap_*.html
+dom_dumps*/
+reports/
+
+# ── Temp / Scratch ────────────────────────────
+scratch/
+analysis/
+analysis*.txt
+victory_*.txt
+all_visible_text.txt
+chunk*.txt
+product_log.txt
+*.csv
+*.json
+!package.json
+!package-lock.json
+
+# ── Playwright / Test Artifacts ───────────────
+test-results/
+playwright-report/
+
+# ── Claude Internal ───────────────────────────
+.claude/
+
+# ── OS / Editor ───────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+*.swp
+
+# ── Windows Excel / 임시 파일 ─────────────────
+~$*.xlsx
+*.tmp

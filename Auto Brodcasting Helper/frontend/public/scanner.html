@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>📱 Mobile Scanner</title>
+    <!-- HTML5 최적화된 바코드/QR 스캐너 오픈소스 -->
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        body { margin: 0; padding: 0; background: #111; color: white; font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        .header { background: #1f2937; padding: 15px; text-align: center; font-weight: bold; font-size: 1.2rem; border-bottom: 3px solid #eab308; box-shadow: 0 4px 6px rgba(0,0,0,0.3); z-index: 10; }
+        #reader { width: 100%; flex: 1; background: #000; display: flex; justify-content: center; align-items: center; border: none; }
+        .status { padding: 20px; text-align: center; background: #1f2937; min-height: 80px; word-wrap: break-word; font-size: 1.1rem; line-height: 1.4; transition: background 0.3s; z-index: 10; box-shadow: 0 -4px 10px rgba(0,0,0,0.5); }
+        .status.success { background: #065f46; font-weight: bold; color: #a7f3d0; }
+        .btn-start { background: #eab308; color: black; border: none; padding: 20px; font-size: 1.4rem; font-weight: 900; cursor: pointer; width: 100%; position: absolute; bottom: 0; left: 0; z-index: 20; height: 120px; border-radius: 20px 20px 0 0; box-shadow: 0 -10px 20px rgba(234, 179, 8, 0.2); }
+        .btn-start:active { background: #ca8a04; }
+
+        /* Security Gate Overlay */
+        #authGate {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(10px);
+            z-index: 9999; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; text-align: center;
+        }
+        #authGate h1 { color: #eab308; margin-bottom: 10px; font-size: 2rem; }
+        #authGate p { color: #94a3b8; font-size: 1rem; margin-bottom: 30px; padding: 0 20px; line-height: 1.5; }
+        #pinInput { font-size: 4rem; width: 200px; text-align: center; padding: 10px; border-radius: 12px; border: 2px solid #334155; background: #1e293b; color: white; outline: none; letter-spacing: 5px; font-family: monospace; }
+        #pinInput:focus { border-color: #eab308; }
+        #pinBtn { margin-top: 30px; padding: 20px 50px; font-size: 1.5rem; background: #eab308; font-weight: 900; color: black; border: none; border-radius: 12px; box-shadow: 0 4px 15px rgba(234, 179, 8, 0.4); cursor: pointer; }
+        #pinBtn:active { transform: scale(0.95); }
+    </style>
+</head>
+<body>
+    <div class="header">📸 브로드캐스팅 스캐너</div>
+    
+    <div id="reader"></div>
+    
+    <div id="status" class="status">
+        PC 관리자 서버에 연결을 시도 중...
+    </div>
+    
+    <button id="startBtn" class="btn-start" style="display:none;">🚀 스캐너 켜기</button>
+
+    <!-- AUTH GATEWAY -->
+    <div id="authGate">
+        <h1>🔒 외부 무선망 보안 인증</h1>
+        <p>비인가자의 방송 데이터 탈취를 막기 위해 보안 연결을 사용합니다.<br><br>PC 관리자 화면 우측 <b>[무선 스캐너 가이드]</b> 창에 표시된 <b>일회성 보안 PIN 4자리</b>를 입력하세요.</p>
+        <input type="number" id="pinInput" placeholder="0000" maxlength="4" />
+        <button id="pinBtn">인증 후 스캐너 접근</button>
+    </div>
+
+    <script>
+        const statusEl = document.getElementById('status');
+        const startBtn = document.getElementById('startBtn');
+        let html5QrcodeScanner;
+        
+        // 1. 단순하고 명료한 전자 삐- 소리 (AudioContext)
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playBeep() {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            oscillator.type = 'sine'; // 맑은 삐 소리
+            oscillator.frequency.value = 1500; // 1500Hz 고음
+            gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+            gainNode.gain.linearRampToValueAtTime(1, audioCtx.currentTime + 0.02);
+            gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.15); // 짧고 경쾌하게
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + 0.2);
+        }
+
+        // 2. PC 서버(WebSocket) 자동 연결 (프록시 통합 및 보안망 적용)
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws-signal`;
+        let ws;
+
+        const authGate = document.getElementById('authGate');
+        const pinInput = document.getElementById('pinInput');
+        const pinBtn = document.getElementById('pinBtn');
+
+        function connectWS() {
+            ws = new WebSocket(wsUrl);
+            ws.onopen = () => console.log('✅ WS Server Connected');
+            
+            ws.onmessage = (event) => {
+                try {
+                    const payload = JSON.parse(event.data);
+                    
+                    if (payload.type === 'PING') {
+                        ws.send(JSON.stringify({ type: 'PONG' }));
+                        return;
+                    }
+
+                    if (payload.type === 'AUTH_REQUIRED') {
+                        // 인증 화면 노출
+                        authGate.style.display = 'flex';
+                    }
+                    if (payload.type === 'AUTH_SUCCESS') {
+                        // 인증 완료 시 스캐너 메인 화면 진입
+                        authGate.style.display = 'none';
+                        startBtn.style.display = 'block';
+                        statusEl.innerText = "✨ 보안 접속 완료!\n'스캐너 켜기'를 누르고 바코드를 읽어주세요.";
+                    }
+                    if (payload.type === 'AUTH_FAILED') {
+                        alert("❌ 보안 인증 실패: 비밀번호를 다시 확인하세요.");
+                        pinInput.value = '';
+                        pinInput.focus();
+                    }
+                } catch (e) {}
+            };
+
+            ws.onclose = () => {
+                statusEl.innerText = "서버 연결이 끊겼습니다. 재연결 중...";
+                startBtn.style.display = 'none';
+                setTimeout(connectWS, 3000);
+            };
+            ws.onerror = (e) => {
+                statusEl.innerHTML = "<span style='color:red'>서버 통신 실패. 공유기 상태나 터널 주소를 확인하세요.</span>";
+            };
+        }
+
+        pinBtn.addEventListener('click', () => {
+            const pin = pinInput.value.trim();
+            if (pin.length < 4) {
+                alert('4자리 보안 숫자를 입력하세요.');
+                return;
+            }
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'AUTH', pin: pin }));
+            } else {
+                alert('서버와 연결되어 있지 않습니다. 잠시 후 다시 시도하세요.');
+            }
+        });
+
+        connectWS();
+
+        // 3. 바코드 캡처 로직 (2회 연속 일치 검증)
+        let isProcessing = false;
+        let lastScannedCode = null;
+        let scanMatchCount = 0;
+        let resetTimer = null;
+
+        function onScanSuccess(decodedText, decodedResult) {
+            if (isProcessing) return; 
+
+            // 1. 방금 읽은 코드와 첫 번째 코드가 다를 경우 (최초 인식)
+            if (lastScannedCode !== decodedText) {
+                lastScannedCode = decodedText;
+                scanMatchCount = 1;
+                
+                // 0.8초 내에 똑같은 코드가 또 스캔되지 않으면 오인식으로 간주하고 초기화
+                clearTimeout(resetTimer);
+                resetTimer = setTimeout(() => {
+                    lastScannedCode = null;
+                    scanMatchCount = 0;
+                }, 800);
+                return; // 아직 1번이므로 무시하고 돌아감
+            }
+
+            // 2. 방금 읽은 코드가 첫 번째와 완벽히 일치할 경우
+            scanMatchCount++;
+            if (scanMatchCount >= 2) {
+                isProcessing = true;
+                clearTimeout(resetTimer);
+                
+                // 띡! 소리 재생
+                playBeep();
+                
+                // PC 앱으로 전송
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'SCANNER_CODE', data: { code: decodedText } }));
+                    statusEl.innerHTML = `✅ 스캔 완료:<br><b style="font-size:1.3rem; color:white;">${decodedText}</b>`;
+                    statusEl.className = 'status success';
+                } else {
+                    statusEl.innerText = `서버 통신 실패. (코드: ${decodedText})`;
+                    statusEl.className = 'status';
+                }
+
+                // 1.5초 후 다음 바코드 스캔 허용
+                setTimeout(() => {
+                    isProcessing = false;
+                    lastScannedCode = null;
+                    scanMatchCount = 0;
+                    statusEl.innerText = "✨ 다음 바코드를 스캔하세요...";
+                    statusEl.className = 'status';
+                }, 1500);
+            }
+        }
+
+        // 4. 카메라 제어 (시작 버튼)
+        // 브라우저 권한 정책 상, 사용자가 터치를 해야 카메라와 소리를 권한 획득 가능
+        startBtn.addEventListener('click', () => {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            startBtn.style.display = 'none'; // 버튼 숨김
+            statusEl.innerText = "카메라 로딩 중...";
+            
+            // Html5Qrcode 초기화
+            html5QrcodeScanner = new Html5Qrcode("reader");
+            
+            // [개선] 1D 바코드 인식률(정확도) 및 속도 극대화 보정 옵션
+            const config = { 
+                fps: 20, // 초당 스캔 횟수 상향 (버벅임 제거 및 속도 향상)
+                qrbox: { width: 300, height: 100 }, // 바코드 모양에 맞춰 세로를 더 좁게 제한하여 오인식 방지
+                aspectRatio: 1.0,
+                // 대한민국 및 글로벌 표준 상품 바코드(1D) 포맷에만 스캐너의 지능을 100% 집중!
+                // (불필요한 2D QR, Aztec 포맷 등을 배제하여 엉뚱한 숫자로 읽히는 오인식 차단)
+                formatsToSupport: [
+                    Html5QrcodeSupportedFormats.EAN_13,
+                    Html5QrcodeSupportedFormats.EAN_8,
+                    Html5QrcodeSupportedFormats.UPC_A,
+                    Html5QrcodeSupportedFormats.UPC_E,
+                    Html5QrcodeSupportedFormats.CODE_128,
+                    Html5QrcodeSupportedFormats.CODE_39
+                ],
+                // 카메라 초점이나 화질 보정을 위해 강제로 HD급 이상의 해상도 요청 (블러 현상 방지)
+                videoConstraints: {
+                    facingMode: "environment",
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    advanced: [{ focusMode: "continuous" }] // 스마트폰 자동초점(AF) 강제 활성화 시도
+                }
+            };
+            
+            html5QrcodeScanner.start({ facingMode: "environment" }, config, onScanSuccess)
+                .then(() => {
+                    statusEl.innerText = "✨ 바코드/QR을 화면 중앙에 맞춰주세요.";
+                })
+                .catch(err => {
+                    statusEl.innerHTML = `<span style='color:#fca5a5;'>카메라 접근 실패: 권한을 허용해주세요.<br>(${err.message})</span>`;
+                    startBtn.style.display = 'block';
+                });
+        });
+    </script>
+</body>
+</html>
