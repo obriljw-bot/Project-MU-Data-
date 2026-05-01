@@ -5,6 +5,8 @@ import * as XLSX from 'xlsx';
 export function ProductManagerModal({ isOpen, onClose, products, setProducts, onSave }) {
     const [editList, setEditList] = useState([]);
     const fileInputRef = useRef(null);
+    // 한글 IME 조합 중 여부 (조합 중엔 파싱 중단)
+    const composingRef = React.useRef(false);
 
     // Initialize edit list when opening
     React.useEffect(() => {
@@ -37,7 +39,24 @@ export function ProductManagerModal({ isOpen, onClose, products, setProducts, on
                 let updatedCount = 0;
                 let newCount = 0;
 
-                const currentMap = new Map(editList.map(p => [p.code, p]));
+                // ── 머지 키: code → barcode → name 순서로 폴백 ──────────────
+                // 기존: p.code만 사용 → code가 비면 모든 행이 '' 키로 충돌해 1개만 남는 버그
+                // 수정: code 없으면 barcode, 그것도 없으면 name으로 식별
+                const getItemKey = (item) => {
+                    const code    = item.code    && String(item.code).trim();
+                    const barcode = item.barcode && String(item.barcode).trim();
+                    const name    = item.name    && String(item.name).trim();
+                    if (code)    return `C:${code}`;
+                    if (barcode) return `B:${barcode}`;
+                    if (name)    return `N:${name}`;
+                    return null; // 식별 불가 → 항상 신규로 처리
+                };
+
+                const currentMap = new Map(
+                    editList
+                        .map(p => { const k = getItemKey(p); return k ? [k, p] : null; })
+                        .filter(Boolean)
+                );
 
                 const parseExcelDate = (value) => {
                     if (!value) return '';
@@ -63,12 +82,17 @@ export function ProductManagerModal({ isOpen, onClose, products, setProducts, on
                         sales: 0
                     };
 
-                    if (currentMap.has(newItem.code)) {
-                        const existing = currentMap.get(newItem.code);
-                        currentMap.set(newItem.code, { ...existing, ...newItem, id: existing.id || newItem.id, sales: existing.sales || 0 });
+                    const key = getItemKey(newItem);
+
+                    if (key && currentMap.has(key)) {
+                        // 기존 항목 업데이트 (sales 보존)
+                        const existing = currentMap.get(key);
+                        currentMap.set(key, { ...existing, ...newItem, id: existing.id || newItem.id, sales: existing.sales || 0 });
                         updatedCount++;
                     } else {
-                        currentMap.set(newItem.code, newItem);
+                        // 신규 항목 추가 (식별 키 없으면 UUID로 고유 키 부여 → 충돌 방지)
+                        const mapKey = key ?? `UID:${newItem.id}`;
+                        currentMap.set(mapKey, newItem);
                         newCount++;
                     }
                 });
@@ -88,13 +112,18 @@ export function ProductManagerModal({ isOpen, onClose, products, setProducts, on
     };
 
     const handleApply = () => {
-        // Validation — name만 필수, code는 선택사항
         if (editList.some(p => !p.name)) {
             alert("제품명(Name)은 필수 항목입니다.");
             return;
         }
-        // Ensure all have IDs
-        const final = editList.map(p => ({ ...p, id: p.id || crypto.randomUUID() }));
+        const final = editList.map(p => ({
+            ...p,
+            id: p.id || crypto.randomUUID(),
+            // keywords: 문자열로 남아있을 경우 # 기준으로 배열 변환 (IME 입력 후 blur 없이 저장한 경우 대비)
+            keywords: typeof p.keywords === 'string'
+                ? p.keywords.split('#').map(k => k.trim()).filter(k => k)
+                : (Array.isArray(p.keywords) ? p.keywords : []),
+        }));
         setProducts(final);
         onSave && onSave(final);
         onClose();
@@ -179,7 +208,7 @@ export function ProductManagerModal({ isOpen, onClose, products, setProducts, on
                                 <th className="p-3 w-24 text-right">Stock</th>
                                 <th className="p-3 w-24 text-right">Sold</th>
                                 <th className="p-3 w-32 text-right">Price</th>
-                                <th className="p-3 w-64">Keywords</th>
+                                <th className="p-3 w-64">Keywords <span className="text-purple-500 normal-case font-normal">(#키워드 스페이스 구분)</span></th>
                                 <th className="p-3 w-12"></th>
                             </tr>
                         </thead>
@@ -222,9 +251,31 @@ export function ProductManagerModal({ isOpen, onClose, products, setProducts, on
                                             value={item.price} onChange={(e) => updateRow(idx, 'price', Number(e.target.value))} />
                                     </td>
                                     <td className="p-2">
-                                        <input className="w-full bg-transparent border-b border-gray-700 focus:border-blue-500 outline-none text-gray-400 text-sm"
-                                            value={Array.isArray(item.keywords) ? item.keywords.join(',') : item.keywords}
-                                            onChange={(e) => updateRow(idx, 'keywords', e.target.value.split(','))} placeholder="a, b, c" />
+                                        <input className="w-full bg-transparent border-b border-gray-700 focus:border-blue-500 outline-none text-purple-300 text-sm"
+                                            value={
+                                                Array.isArray(item.keywords) && item.keywords.length > 0
+                                                    ? '#' + item.keywords.map(k => k.replace(/^#/, '')).join(' #')
+                                                    : (typeof item.keywords === 'string' ? item.keywords : '')
+                                            }
+                                            onChange={(e) => {
+                                                // 한글 IME 조합 중엔 raw string 그대로 저장 (파싱 생략)
+                                                updateRow(idx, 'keywords', e.target.value);
+                                            }}
+                                            onCompositionStart={() => { composingRef.current = true; }}
+                                            onCompositionEnd={(e) => {
+                                                composingRef.current = false;
+                                                // 조합 완료 후에도 raw string 유지 (onBlur에서 파싱)
+                                                updateRow(idx, 'keywords', e.target.value);
+                                            }}
+                                            onBlur={(e) => {
+                                                // 입력 완료 시 # 기준 파싱 → 배열로 저장
+                                                const parsed = e.target.value
+                                                    .split('#')
+                                                    .map(k => k.trim())
+                                                    .filter(k => k);
+                                                updateRow(idx, 'keywords', parsed);
+                                            }}
+                                            placeholder="#키워드1 #키워드2 #키워드3" />
                                     </td>
                                     <td className="p-2 text-center">
                                         <button onClick={() => removeRow(idx)} className="text-gray-600 hover:text-red-500"><Trash size={16} /></button>

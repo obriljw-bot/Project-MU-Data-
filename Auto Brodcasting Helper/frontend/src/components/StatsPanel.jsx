@@ -1,19 +1,19 @@
 import React, { useState } from 'react';
-import { Activity, RefreshCw, Trophy, Download } from 'lucide-react';
+import { Activity, RefreshCw, Trophy, Download, Check, X } from 'lucide-react';
 
-export function StatsPanel({ trends, completedSales = [], pendingSalesCount = 0, onRematch, onClearCompletedSales }) {
+export function StatsPanel({ trends, salesLogs = [], onApplyAll, onUpdateLogCode, onApplySingle, onDeleteSingle, onClearSalesLogs }) {
     const [activeTab, setActiveTab] = useState('QUERY'); // 'QUERY' or 'REACTION'
 
     const downloadCSV = () => {
-        if (completedSales.length === 0) return;
+        if (salesLogs.length === 0) return;
         const rows = [
             ['순번', '제품코드', '제품명', '판매수(명)', '매칭상태', '시간'],
-            ...completedSales.map((s, i) => [
+            ...salesLogs.map((s, i) => [
                 i + 1,
                 `"${s.code || ''}"`,
-                `"${s.productName}"`,
+                `"${s.productName || ''}"`,
                 s.count,
-                s.matched ? '완료' : '대기',
+                s.applied ? '완료' : '대기',
                 new Date(s.ts).toLocaleString()
             ])
         ];
@@ -22,7 +22,7 @@ export function StatsPanel({ trends, completedSales = [], pendingSalesCount = 0,
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `completed_sales_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.download = `sales_logs_${new Date().toISOString().slice(0, 10)}.csv`;
         a.click();
         URL.revokeObjectURL(url);
     };
@@ -110,14 +110,14 @@ export function StatsPanel({ trends, completedSales = [], pendingSalesCount = 0,
                             <Download size={8} /> CSV
                         </button>
                         <button
-                            onClick={onRematch}
+                            onClick={onApplyAll}
                             className="flex items-center gap-0.5 text-[9px] text-orange-400 hover:text-orange-200 font-bold transition-colors px-1.5 py-0.5 rounded hover:bg-orange-900/30"
-                            title="대기 판매 재매칭 시도"
+                            title="일괄 갱신 (Apply All)"
                         >
-                            <RefreshCw size={8} /> 갱신
+                            <RefreshCw size={8} /> 일괄 갱신
                         </button>
                         <button
-                            onClick={onClearCompletedSales}
+                            onClick={onClearSalesLogs}
                             className="text-[9px] text-gray-600 hover:text-red-400 transition-colors px-1.5 py-0.5 rounded hover:bg-gray-700"
                             title="전체 기록 초기화"
                         >
@@ -128,27 +128,44 @@ export function StatsPanel({ trends, completedSales = [], pendingSalesCount = 0,
 
                 {/* 기록 목록 */}
                 <div className="flex-1 overflow-y-auto min-h-0">
-                    {completedSales.length > 0 ? (
-                        completedSales.map((sale, idx) => {
-                            const isPending = sale.matched === false;
+                    {salesLogs.length > 0 ? (
+                        salesLogs.map((sale, idx) => {
+                            const isPending = !sale.applied;
                             return (
                                 <div
                                     key={sale.id || idx}
-                                    className={`flex items-center gap-2 px-2 py-1 border-b border-gray-800/40 hover:bg-gray-800/40 transition-colors ${isPending ? 'border-l-2 border-l-red-600/70 bg-red-900/10' : 'border-l-2 border-l-green-700/40'}`}
+                                    className={`group flex items-center gap-1.5 px-2 py-1 border-b border-gray-800/40 hover:bg-gray-800/40 transition-colors ${isPending ? 'border-l-2 border-l-red-600/70 bg-red-900/10' : 'border-l-2 border-l-green-700/40'}`}
                                 >
                                     <span className="text-[8px] text-gray-600 flex-none w-4 text-right">{idx + 1}</span>
                                     <span className={`text-[10px] flex-none ${isPending ? 'text-red-400' : 'text-green-500'}`}>
                                         {isPending ? '⏳' : '✓'}
                                     </span>
-                                    {sale.code ? (
-                                        <span className={`text-[8px] font-mono px-1 py-0.5 rounded flex-none leading-none ${isPending ? 'text-red-300 bg-red-900/30 border border-red-800/40' : 'text-purple-300 bg-purple-900/20 border border-purple-800/30'}`}>
-                                            {sale.code}
-                                        </span>
-                                    ) : (
-                                        <span className="text-[8px] text-gray-700 flex-none">—</span>
-                                    )}
+                                    
+                                    {/* 제품 코드 영역 (대기 중일 때는 입력창 노출) */}
+                                    <div className="flex-none min-w-[3rem]">
+                                        {isPending ? (
+                                            <input
+                                                type="text"
+                                                defaultValue={sale.code || ''}
+                                                placeholder="코드"
+                                                onBlur={(e) => onUpdateLogCode(sale.id, e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        onUpdateLogCode(sale.id, e.target.value);
+                                                        onApplySingle(sale.id);
+                                                    }
+                                                }}
+                                                className="w-full bg-black/40 border border-red-500/30 rounded px-1 py-0.5 text-[8px] font-mono text-red-200 outline-none focus:border-red-500/60"
+                                            />
+                                        ) : (
+                                            <span className="text-[8px] font-mono px-1 py-0.5 rounded leading-none text-purple-300 bg-purple-900/20 border border-purple-800/30">
+                                                {sale.code}
+                                            </span>
+                                        )}
+                                    </div>
+
                                     <span className={`text-[9px] truncate flex-1 ${isPending ? 'text-red-200/80' : 'text-gray-300'} font-medium`}>
-                                        {sale.productName}
+                                        {sale.productName || '매칭 대기'}
                                     </span>
                                     <span className={`text-[10px] font-bold flex-none ${isPending ? 'text-red-400' : 'text-yellow-400'}`}>
                                         {sale.count}개
@@ -156,13 +173,35 @@ export function StatsPanel({ trends, completedSales = [], pendingSalesCount = 0,
                                     <span className="text-[8px] text-gray-600 flex-none">
                                         {new Date(sale.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </span>
+
+                                    {/* 개별 액션 버튼 — hover 시 노출 */}
+                                    <div className="flex items-center gap-0.5 flex-none opacity-0 group-hover:opacity-100 transition-opacity ml-0.5">
+                                        {/* 갱신: 대기 항목만 */}
+                                        {isPending && (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); onApplySingle && onApplySingle(sale.id); }}
+                                                className="flex items-center justify-center w-5 h-5 bg-blue-900/50 hover:bg-blue-600 text-blue-300 rounded transition-colors"
+                                                title="이 항목만 갱신 (재매칭 시도)"
+                                            >
+                                                <RefreshCw size={9} />
+                                            </button>
+                                        )}
+                                        {/* 삭제: 모든 항목 */}
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); onDeleteSingle && onDeleteSingle(sale.id); }}
+                                            className="flex items-center justify-center w-5 h-5 bg-gray-800 hover:bg-red-700 text-gray-500 hover:text-white rounded transition-colors"
+                                            title="이 항목 삭제"
+                                        >
+                                            <X size={9} />
+                                        </button>
+                                    </div>
                                 </div>
                             );
                         })
                     ) : (
                         <div className="h-full flex flex-col items-center justify-center gap-2 text-gray-600">
                             <Trophy size={20} className="opacity-20" />
-                            <span className="text-[10px]">판매 완료 기록 없음</span>
+                            <span className="text-[10px]">실시간 판매 로그 없음</span>
                         </div>
                     )}
                 </div>

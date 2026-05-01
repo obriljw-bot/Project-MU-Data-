@@ -315,8 +315,14 @@ async function main() {
                 }
 
                 if (parsed.type === 'FCFS_WINNERS') {
-                    console.log(`🏆 FCFS Winners Event: ${parsed.data.count} users`);
-                    broadcast(wss, { ...parsed, broadcastId: Date.now() });
+                    const fp = parsed.data?.fingerprint ? ` [fp: ${parsed.data.fingerprint}]` : ' [no-fp]';
+                    console.log(`🏆 FCFS Winners Event: ${parsed.data.count} users${fp}`);
+                    broadcastToDashboard({ ...parsed, broadcastId: Date.now() });
+                }
+
+                // [V5.1] FCFS_CHAT_HINT: 스니퍼 내부 로그 전용 — 대시보드로 전달하지 않음
+                if (parsed.type === 'FCFS_CHAT_HINT') {
+                    console.log(`💬 FCFS_CHAT_HINT (no-relay): ${parsed.data?.count} users`);
                 }
                 
                 if (parsed.type === 'FCFS_PARTICIPATION') {

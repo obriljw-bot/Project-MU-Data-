@@ -1,15 +1,15 @@
 import React from 'react';
 import { X } from 'lucide-react';
 
-const PrompterOverlay = ({ prompterMsg, onClose, onUpdateProduct }) => {
+const PrompterOverlay = ({ prompterMsg, onClose, onUpdateProduct, unmappedCodes = [], onMapNewCode }) => {
     // No auto-hide timer anymore. Persist until manual close.
     const [localCode, setLocalCode] = React.useState('');
 
     React.useEffect(() => {
-        if (prompterMsg?.product?.code) {
-            setLocalCode(prompterMsg.product.code);
+        if (prompterMsg?.mode === 'PRODUCT' && prompterMsg.product) {
+            setLocalCode(prompterMsg.product.code || '');
         }
-    }, [prompterMsg?.product?.code]);
+    }, [prompterMsg?.product]);
 
     if (!prompterMsg) return null;
 
@@ -42,8 +42,26 @@ const PrompterOverlay = ({ prompterMsg, onClose, onUpdateProduct }) => {
 
             {mode === 'PRODUCT' && product && (
                 <div className="flex flex-col items-center justify-center w-full px-4 gap-2">
+                    {/* [NEW] Unmapped Code Floating Banner (Soft Tone) */}
+                    {!product.code && unmappedCodes && unmappedCodes.length > 0 && (
+                        <div className="absolute top-24 z-50 bg-slate-800/95 border border-slate-600 p-4 rounded-xl shadow-2xl flex flex-col items-center gap-3">
+                            <span className="text-slate-300 font-medium text-lg">💡 연결 대기 중인 코드가 있습니다. 상품에 할당하려면 클릭하세요.</span>
+                            <div className="flex gap-2 flex-wrap justify-center">
+                                {unmappedCodes.map((code) => (
+                                    <button
+                                        key={code}
+                                        onClick={() => onMapNewCode && onMapNewCode(code)}
+                                        className="bg-slate-700 hover:bg-indigo-600 text-slate-100 font-mono font-medium px-4 py-2 rounded-lg transition-colors border border-slate-500 shadow-md flex items-center gap-2"
+                                    >
+                                        {code} <span className="text-sm bg-black/20 px-1.5 py-0.5 rounded text-indigo-100">적용</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Row 1: Code | Name (Same Line, Equal Size) */}
-                    <div className="flex items-center justify-center gap-6 w-full text-center">
+                    <div className="flex items-center justify-center gap-6 w-full text-center mt-8">
                         <div className="relative group">
                             <input
                                 type="text"
