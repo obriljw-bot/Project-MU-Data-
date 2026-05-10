@@ -92,6 +92,7 @@
         <div class="title-area">
             🔴 LIVE PROMPTER
             <button class="full-screen-btn" onclick="toggleFullScreen()">⛶</button>
+            <span id="wakeLockBadge" style="font-size:1rem; padding: 6px 14px; border-radius: 20px; background:#1e293b; border: 1px solid #334155; color:#6b7280; font-weight:bold;">💤 화면유지 대기</span>
         </div>
         <div></div> <!-- Spacer -->
     </div>
@@ -325,26 +326,67 @@
 
         connectWS();
 
-        // ── 화면 자동꺼짐 방지 (Wake Lock API) ──────────────────────────
-        (async () => {
-            if (!('wakeLock' in navigator)) {
-                console.warn('[WakeLock] 이 브라우저는 Wake Lock API를 지원하지 않습니다.');
-                return;
+        // ── 화면 자동꺼짐 방지 ──────────────────────────────────────────
+        const wakeLockBadge = document.getElementById('wakeLockBadge');
+
+        // [방법 1] Wake Lock API — 삼성 인터넷 15+ 지원
+        let wakeLock = null;
+        const requestWakeLock = async () => {
+            if (!('wakeLock' in navigator)) return false;
+            try {
+                wakeLock = await navigator.wakeLock.request('screen');
+                wakeLockBadge.textContent = '🟢 화면유지 ON';
+                wakeLockBadge.style.color = '#4ade80';
+                wakeLockBadge.style.borderColor = '#166534';
+                wakeLock.addEventListener('release', () => {
+                    wakeLockBadge.textContent = '🔴 화면유지 해제됨';
+                    wakeLockBadge.style.color = '#f87171';
+                });
+                console.log('✅ [WakeLock] Wake Lock API 활성화');
+                return true;
+            } catch (err) {
+                console.warn('[WakeLock] API 요청 실패:', err.message);
+                return false;
             }
-            let wakeLock = null;
-            const requestWakeLock = async () => {
-                try {
-                    wakeLock = await navigator.wakeLock.request('screen');
-                    console.log('✅ [WakeLock] 화면 자동꺼짐 방지 활성화');
-                } catch (err) {
-                    console.warn('[WakeLock] 요청 실패:', err.message);
-                }
-            };
-            // 탭이 다시 활성화될 때 재획득 (백그라운드 전환 후 복귀 시 자동 해제되므로)
-            document.addEventListener('visibilitychange', () => {
-                if (document.visibilityState === 'visible') requestWakeLock();
+        };
+
+        // 탭이 다시 포그라운드로 돌아올 때 재획득
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') requestWakeLock();
+        });
+
+        // [방법 2] 무음 영상 루프 폴백 — 삼성 인터넷이 Wake Lock을 무시할 때 대비
+        // 브라우저는 영상이 재생 중이면 화면을 끄지 않음
+        const setupVideoFallback = () => {
+            const video = document.createElement('video');
+            video.loop = true;
+            video.muted = true;
+            video.playsInline = true;
+            video.setAttribute('webkit-playsinline', '');
+            video.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;top:0;left:0;';
+            // 1초짜리 투명 MP4 (최소 크기 base64)
+            video.src = 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28ybXA0MQAAAAhmcmVlAAAAG21kYXQAAAAZGwYAAAIAGQYAQQMDAwMDAwMDAwMDAwMD';
+            document.body.appendChild(video);
+            video.play().then(() => {
+                console.log('✅ [VideoFallback] 무음 영상 루프 시작');
+            }).catch(() => {
+                console.warn('[VideoFallback] 자동재생 차단됨 — 화면 터치 후 활성화');
+                // 사용자 터치 시 재시도
+                document.addEventListener('touchstart', () => video.play(), { once: true });
+                document.addEventListener('click', () => video.play(), { once: true });
             });
-            requestWakeLock();
+        };
+
+        // Wake Lock API 먼저 시도, 실패 시 영상 폴백 병행
+        (async () => {
+            const wakeLockOk = await requestWakeLock();
+            if (!wakeLockOk) {
+                wakeLockBadge.textContent = '🟡 화면유지 (영상)';
+                wakeLockBadge.style.color = '#facc15';
+                wakeLockBadge.style.borderColor = '#854d0e';
+            }
+            // 영상 폴백은 항상 병행 실행 (Wake Lock만으론 갤럭시 절전에 뚫릴 수 있음)
+            setupVideoFallback();
         })();
     </script>
 </body>
