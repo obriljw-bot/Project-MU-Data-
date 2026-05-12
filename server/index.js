@@ -1,3 +1,4 @@
+require('./ws_server'); // Start WebSocket Server (Port 8081) + Cloudflare Tunnel
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
