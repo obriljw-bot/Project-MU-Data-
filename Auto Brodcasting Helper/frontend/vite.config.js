@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: '0.0.0.0', // Expose to local network and tunnel
-    allowedHosts: ['.trycloudflare.com', '.loca.lt', 'localhost'], // Vite 7: 명시적 허용 목록
+    allowedHosts: ['.trycloudflare.com', '.loca.lt', 'localhost', 'grip.makemerobot.cloud'], // Vite 7: 명시적 허용 목록
     cors: true,         // Allow cross-origin requests
     proxy: {
       '/ws-signal': {
