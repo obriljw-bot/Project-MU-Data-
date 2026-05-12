@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: '0.0.0.0', // Expose to local network and tunnel
-    allowedHosts: true, // [CRITICAL FIX] Allow localtunnel domains to access Vite dev server
+    allowedHosts: ['.trycloudflare.com', '.loca.lt', 'localhost'], // Vite 7: 명시적 허용 목록
     cors: true,         // Allow cross-origin requests
     proxy: {
       '/ws-signal': {
