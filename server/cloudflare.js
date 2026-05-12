@@ -59,25 +59,19 @@ async function startCloudflareTunnel(port) {
             }
         }, 30000);
 
-        console.log(`[Cloudflare] Starting tunnel on port ${port}...`);
-        // --config nul : 기존 config.yml(ERP 터널 설정 등) 무시하고 순수 quick tunnel로 실행
-        tunnelProcess = spawn(BINARY_PATH, ['tunnel', '--config', 'nul', '--url', `http://127.0.0.1:${port}`]);
+        // Named Tunnel 방식: grip.makemerobot.cloud → localhost:5173 (고정 URL, 삼성브라우저 차단 없음)
+        const TUNNEL_NAME = 'onebridge-erp';
+        const FIXED_URL = 'https://grip.makemerobot.cloud';
+        console.log(`[Cloudflare] Starting named tunnel '${TUNNEL_NAME}'...`);
+        tunnelProcess = spawn(BINARY_PATH, ['tunnel', 'run', TUNNEL_NAME]);
 
-        // Cloudflared typically outputs logs and the URL to stderr, not stdout.
         tunnelProcess.stderr.on('data', (data) => {
             const output = data.toString();
-            
-            // Debug the raw output optionally if URL gets missed
-            // console.log("[Cloudflared Log]", output.trim());
-            
-            // Regex to extract Cloudflare generated URL (e.g. https://funny-apple-cake.trycloudflare.com)
-            const match = output.match(/(https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com)/);
-            if (match && !isResolved) {
+            if (!isResolved && output.includes('Registered tunnel connection')) {
                 isResolved = true;
                 clearTimeout(fallbackTimer);
-                const tunnelUrl = match[1];
-                console.log(`[Cloudflare] ✨ Tunnel established: ${tunnelUrl}`);
-                resolve(tunnelUrl);
+                console.log(`[Cloudflare] ✨ Tunnel established: ${FIXED_URL}`);
+                resolve(FIXED_URL);
             }
         });
 
