@@ -1,0 +1,412 @@
+Attribute VB_Name = "mdl_DataCollection"
+Option Explicit
+
+' ========================================
+' 모듈: mdl_DataCollection
+' 설명: 외부 파일 데이터 취합
+' ========================================
+
+' 여러 파일 처리 (UserForm에서 호출)
+Public Sub ProcessMultipleFiles(fileList As Collection)
+    On Error GoTo ErrorHandler
+    
+    Dim wsDest As Worksheet
+    Dim fileInfo As Object
+    Dim i As Long
+    
+    ' 성능 최적화
+    OptimizePerformance True
+    
+    ' 통합시트 초기화
+    Set wsDest = InitializeDestSheet
+    
+    ' 각 파일 처리
+    For i = 1 To fileList.Count
+        Set fileInfo = fileList(i)
+        
+        ' 진행 상황
+        If GetSetting(SET_진행표시) = "O" Then
+            UpdateProgress "파일 처리 중", fileInfo("FileName"), Int(i / fileList.Count * 50)
+        End If
+        
+        ' 파일 처리 (첫 파일이면 헤더도 설정)
+        ProcessSingleFile fileInfo("FilePath"), fileInfo("StoreName"), wsDest, (i = 1)
+    Next i
+    
+    ' 브랜드 열 추가 및 정리
+    FinalizeDestSheet wsDest
+    
+    ' 누적 데이터
+    If GetSetting(SET_요약시트) = "O" Then
+        On Error Resume Next
+        mdl_Accumulated.AppendToAccumulatedData wsDest
+        On Error GoTo ErrorHandler
+    End If
+    
+CleanExit:
+    OptimizePerformance False
+    Application.CutCopyMode = False
+    
+    If GetSetting(SET_진행표시) = "O" Then
+        UpdateProgress "완료", "", 50
+    End If
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "데이터 취합 중 오류: " & vbCrLf & Err.Description, vbCritical
+    Resume CleanExit
+End Sub
+
+' 단일 파일 처리
+Private Sub ProcessSingleFile(filePath As String, storeName As String, wsDest As Worksheet, isFirstFile As Boolean)
+    On Error GoTo ErrorHandler
+    
+    Dim wbSource As Workbook
+    Dim wsSource As Worksheet
+    Dim lastRow As Long, lastRowDest As Long
+    Dim sheetDate As Date
+    Dim formattedDate As String
+    Dim i As Long
+    
+    Set wbSource = Workbooks.Open(filePath)
+    
+    ' 첫 파일이면 헤더 설정
+    If isFirstFile Then
+        Set wsSource = wbSource.Sheets(1)
+        
+        ' A, B, C열 헤더
+        wsDest.Cells(1, 1).value = "판매일"
+        wsDest.Cells(1, 2).value = "판매매장"
+        wsDest.Cells(1, 3).value = "브랜드"
+        
+        ' D열부터 외부파일 헤더 복사 (외부 A~I → 통합 D~L)
+        wsSource.Range("A1:I1").Copy
+        wsDest.Cells(1, 4).PasteSpecial Paste:=xlPasteValues
+        Application.CutCopyMode = False
+    End If
+    
+    ' 각 시트(일자별) 처리
+    For Each wsSource In wbSource.Sheets
+        ' 날짜 변환 ("10.01" → 2025-10-01)
+        formattedDate = wsSource.Name
+        formattedDate = Replace(formattedDate, ".", "/")
+        
+        On Error Resume Next
+        sheetDate = DateSerial(Year(Date), CInt(Split(formattedDate, "/")(0)), CInt(Split(formattedDate, "/")(1)))
+        On Error GoTo ErrorHandler
+        
+        ' 데이터 행 수
+        lastRow = wsSource.Cells(wsSource.Rows.Count, "I").End(xlUp).Row
+        
+        If lastRow > 1 Then
+            lastRowDest = wsDest.Cells(wsDest.Rows.Count, 4).End(xlUp).Row + 1
+            
+            ' D열부터 데이터 복사 (외부 A~I → 통합 D~L)
+            wsSource.Range("A2:I" & lastRow).Copy
+            wsDest.Cells(lastRowDest, 4).PasteSpecial Paste:=xlPasteValues
+            Application.CutCopyMode = False
+            
+            ' A열: 판매일
+            For i = lastRowDest To lastRowDest + (lastRow - 2)
+                wsDest.Cells(i, 1).value = sheetDate
+            Next i
+            
+            ' B열: 판매매장
+            wsDest.Range("B" & lastRowDest & ":B" & lastRowDest + (lastRow - 2)).value = storeName
+        End If
+    Next wsSource
+    
+    wbSource.Close False
+    Exit Sub
+    
+ErrorHandler:
+    If Not wbSource Is Nothing Then wbSource.Close False
+    Err.Raise Err.Number, , Err.Description
+End Sub
+
+' 브랜드 추출 및 서식
+Private Sub FinalizeDestSheet(ws As Worksheet)
+    Dim lastRow As Long
+    Dim brandCell As Range
+    Dim brandText As String
+    
+    ' 상품명 열 위치 (외부 B열 → 통합 D+1 = E열)
+    Dim productCol As Long
+    productCol = 5  ' E열
+    
+    ' 마지막 행
+    lastRow = ws.Cells(ws.Rows.Count, productCol).End(xlUp).Row
+    
+    ' C열에 브랜드명 추출 (상품명의 첫 단어)
+    For Each brandCell In ws.Range(ws.Cells(2, productCol), ws.Cells(lastRow, productCol))
+        If brandCell.value <> "" Then
+            If InStr(brandCell.value, " ") > 0 Then
+                brandText = Split(brandCell.value, " ")(0)
+            Else
+                brandText = brandCell.value
+            End If
+            
+            ws.Cells(brandCell.Row, 3).value = brandText
+        End If
+    Next brandCell
+    
+    ' 헤더 서식
+    ws.Range("A1:L1").Font.Bold = True
+    ws.Range("A1:L1").Interior.color = RGB(68, 114, 196)
+    ws.Range("A1:L1").Font.color = RGB(255, 255, 255)
+    ws.Range("A1:L1").HorizontalAlignment = xlCenter
+    
+    ' 자동 맞춤
+    ws.Cells.EntireColumn.AutoFit
+End Sub
+
+' 통합시트 초기화
+Private Function InitializeDestSheet() As Worksheet
+    Dim ws As Worksheet
+    
+    On Error Resume Next
+    Set ws = ThisWorkbook.Sheets(SHEET_통합)
+    On Error GoTo 0
+    
+    If ws Is Nothing Then
+        Set ws = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+        ws.Name = SHEET_통합
+    Else
+        ws.Cells.Clear
+    End If
+    
+    Set InitializeDestSheet = ws
+End Function
+
+' 성능 최적화
+Private Sub OptimizePerformance(enable As Boolean)
+    With Application
+        .ScreenUpdating = Not enable
+        .EnableEvents = Not enable
+        .Calculation = IIf(enable, xlCalculationManual, xlCalculationAutomatic)
+        .DisplayAlerts = Not enable
+    End With
+End Sub
+
+' 진행 상황 업데이트
+Private Sub UpdateProgress(stepName As String, fileName As String, percent As Long)
+    On Error Resume Next
+    If Not frmProgress Is Nothing Then
+        frmProgress.UpdateProgress stepName, fileName, percent
+    Else
+        Application.StatusBar = stepName & ": " & percent & "% (" & fileName & ")"
+    End If
+End Sub
+
+' ??? 신규: 누적데이터에 직접 추가
+Public Sub ProcessMultipleFilesToAccumulated(fileList As Collection)
+    On Error GoTo ErrorHandler
+    
+    Dim wsAccum As Worksheet
+    Dim fileInfo As Object
+    Dim i As Long
+    
+    OptimizePerformance True
+    
+    ' 누적데이터 시트 확인/생성
+    On Error Resume Next
+    Set wsAccum = ThisWorkbook.Sheets("누적데이터")
+    On Error GoTo ErrorHandler
+    
+    If wsAccum Is Nothing Then
+        Set wsAccum = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+        wsAccum.Name = "누적데이터"
+        
+        ' 헤더 생성
+        Call InitializeAccumulatedSheet(wsAccum)
+    End If
+    
+    ' 각 파일 처리
+    For i = 1 To fileList.Count
+        Set fileInfo = fileList(i)
+        
+        If GetSetting(SET_진행표시) = "O" Then
+            UpdateProgress "파일 처리 중", fileInfo("FileName"), Int(i / fileList.Count * 100)
+        End If
+        
+        ' ? 누적데이터에 직접 추가
+        ProcessSingleFileToAccumulated fileInfo("FilePath"), fileInfo("StoreName"), wsAccum
+    Next i
+    
+    ' 중복 제거
+    If GetSetting(SET_중복검증) = "O" Then
+        RemoveDuplicatesFromAccumulated wsAccum
+    End If
+    
+    ' 정렬
+    SortAccumulatedData wsAccum
+    
+    ' 서식
+    FormatAccumulatedSheet wsAccum
+    
+CleanExit:
+    OptimizePerformance False
+    Application.CutCopyMode = False
+    
+    MsgBox "? 데이터 취합 완료!" & vbCrLf & vbCrLf & _
+           "처리 파일: " & fileList.Count & "개" & vbCrLf & _
+           "누적데이터 시트에 추가되었습니다.", vbInformation, "완료"
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "데이터 취합 중 오류: " & vbCrLf & Err.Description, vbCritical
+    Resume CleanExit
+End Sub
+
+' 누적데이터 시트 초기화
+Private Sub InitializeAccumulatedSheet(ws As Worksheet)
+    With ws
+        .Cells(1, 1).value = "판매일"
+        .Cells(1, 2).value = "판매매장"
+        .Cells(1, 3).value = "브랜드"
+        .Cells(1, 4).value = "코드"
+        .Cells(1, 5).value = "이름"
+        .Cells(1, 6).value = "현원가"
+        .Cells(1, 7).value = "현매가"
+        .Cells(1, 8).value = "판매수량"
+        .Cells(1, 9).value = "판매액"
+        .Cells(1, 10).value = "고객수"
+        .Cells(1, 11).value = "객수량"
+        .Cells(1, 12).value = "현재고"
+        
+        .Range("A1:L1").Font.Bold = True
+        .Range("A1:L1").Interior.color = RGB(68, 114, 196)
+        .Range("A1:L1").Font.color = RGB(255, 255, 255)
+        .Range("A1:L1").HorizontalAlignment = xlCenter
+    End With
+End Sub
+
+' 단일 파일을 누적데이터에 추가
+Private Sub ProcessSingleFileToAccumulated(filePath As String, storeName As String, wsAccum As Worksheet)
+    On Error GoTo ErrorHandler
+    
+    Dim wbSource As Workbook
+    Dim wsSource As Worksheet
+    Dim lastRowAccum As Long
+    Dim lastRowSource As Long
+    Dim sheetDate As Date
+    Dim formattedDate As String
+    Dim i As Long
+    Dim pasteRow As Long
+    Dim brandName As String
+    Dim productName As String
+    
+    Set wbSource = Workbooks.Open(filePath)
+    
+    ' 각 시트(일자별) 처리
+    For Each wsSource In wbSource.Sheets
+        ' 날짜 변환
+        formattedDate = wsSource.Name
+        formattedDate = Replace(formattedDate, ".", "/")
+        
+        On Error Resume Next
+        sheetDate = DateSerial(Year(Date), CInt(Split(formattedDate, "/")(0)), CInt(Split(formattedDate, "/")(1)))
+        On Error GoTo ErrorHandler
+        
+        ' 데이터 행 수
+        lastRowSource = wsSource.Cells(wsSource.Rows.Count, "I").End(xlUp).Row
+        
+        If lastRowSource > 1 Then
+            lastRowAccum = wsAccum.Cells(wsAccum.Rows.Count, 1).End(xlUp).Row
+            pasteRow = lastRowAccum + 1
+            
+            ' 행별 처리
+            For i = 2 To lastRowSource
+                ' 브랜드 추출 (상품명 첫 단어)
+                productName = Trim(wsSource.Cells(i, 2).value)
+                If InStr(productName, " ") > 0 Then
+                    brandName = Split(productName, " ")(0)
+                Else
+                    brandName = productName
+                End If
+                
+                ' 데이터 입력
+                wsAccum.Cells(pasteRow, 1).value = sheetDate       ' 판매일
+                wsAccum.Cells(pasteRow, 2).value = storeName       ' 판매매장
+                wsAccum.Cells(pasteRow, 3).value = brandName       ' 브랜드
+                wsAccum.Cells(pasteRow, 4).value = wsSource.Cells(i, 1).value  ' 코드
+                wsAccum.Cells(pasteRow, 5).value = wsSource.Cells(i, 2).value  ' 이름
+                wsAccum.Cells(pasteRow, 6).value = wsSource.Cells(i, 3).value  ' 현원가
+                wsAccum.Cells(pasteRow, 7).value = wsSource.Cells(i, 4).value  ' 현매가
+                wsAccum.Cells(pasteRow, 8).value = wsSource.Cells(i, 5).value  ' 판매수량
+                wsAccum.Cells(pasteRow, 9).value = wsSource.Cells(i, 6).value  ' 판매액
+                wsAccum.Cells(pasteRow, 10).value = wsSource.Cells(i, 7).value ' 고객수
+                wsAccum.Cells(pasteRow, 11).value = wsSource.Cells(i, 8).value ' 객수량
+                wsAccum.Cells(pasteRow, 12).value = wsSource.Cells(i, 9).value ' 현재고
+                
+                pasteRow = pasteRow + 1
+            Next i
+        End If
+    Next wsSource
+    
+    wbSource.Close False
+    Exit Sub
+    
+ErrorHandler:
+    If Not wbSource Is Nothing Then wbSource.Close False
+    Err.Raise Err.Number, , Err.Description
+End Sub
+
+' 중복 제거
+Private Sub RemoveDuplicatesFromAccumulated(ws As Worksheet)
+    On Error Resume Next
+    
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    
+    If lastRow > 1 Then
+        ws.Range("A1:L" & lastRow).RemoveDuplicates _
+            Columns:=Array(1, 2, 3, 5), _
+            Header:=xlYes
+    End If
+End Sub
+
+' 정렬
+Private Sub SortAccumulatedData(ws As Worksheet)
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    
+    If lastRow > 1 Then
+        With ws.Sort
+            .SortFields.Clear
+            .SortFields.Add key:=ws.Range("A2:A" & lastRow), _
+                            SortOn:=xlSortOnValues, _
+                            Order:=xlDescending, _
+                            DataOption:=xlSortNormal
+            .SortFields.Add key:=ws.Range("C2:C" & lastRow), _
+                            SortOn:=xlSortOnValues, _
+                            Order:=xlAscending, _
+                            DataOption:=xlSortNormal
+            .SetRange ws.Range("A1:L" & lastRow)
+            .Header = xlYes
+            .Apply
+        End With
+    End If
+End Sub
+
+' 서식
+Private Sub FormatAccumulatedSheet(ws As Worksheet)
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    
+    With ws
+        .Range("A2:L" & lastRow).HorizontalAlignment = xlCenter
+        .Range("E2:E" & lastRow).HorizontalAlignment = xlLeft
+        .Range("A2:A" & lastRow).NumberFormat = "yyyy-mm-dd"
+        .Range("H2:H" & lastRow).NumberFormat = "0"
+        .Range("I2:I" & lastRow).NumberFormat = "#,##0"
+        
+        On Error Resume Next
+        .Range("A1:L1").AutoFilter
+        On Error GoTo 0
+        
+        .Cells.EntireColumn.AutoFit
+    End With
+End Sub

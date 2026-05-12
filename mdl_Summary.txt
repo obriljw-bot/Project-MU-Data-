@@ -1,0 +1,259 @@
+Attribute VB_Name = "mdl_Summary"
+Option Explicit
+
+' ========================================
+' 모듈: mdl_SUMMARY
+' 설명: 요약 시트 생성 및 관리
+' ========================================
+
+' 요약 시트 생성 (외부에서 호출 가능)
+Public Sub CreateBrandSummary(wb As Workbook, brandName As String)
+    On Error Resume Next
+    Call CreateSimpleSummary(wb, brandName)
+    On Error GoTo 0
+End Sub
+
+' 간단한 요약 시트 생성
+Private Sub CreateSimpleSummary(wb As Workbook, brandName As String)
+    On Error Resume Next
+    
+    Dim wsSummary As Worksheet
+    Dim wsData As Worksheet
+    Dim lastRow As Long
+    Dim i As Long
+    Dim currentRow As Long
+    
+    Set wsData = wb.Sheets(1)
+    Set wsSummary = wb.Sheets.Add(Before:=wsData)
+    wsSummary.Name = "요약"
+    
+    lastRow = wsData.Cells(wsData.Rows.Count, 1).End(xlUp).Row
+    
+    With wsSummary
+        ' 헤더
+        .Range("A1:H1").Merge
+        .Range("A1").value = brandName & " 판매 요약"
+        .Range("A1").Font.Size = 16
+        .Range("A1").Font.Bold = True
+        .Range("A1").Font.color = RGB(255, 255, 255)
+        .Range("A1").Interior.color = RGB(68, 114, 196)
+        .Range("A1").HorizontalAlignment = xlCenter
+        .Range("A1").VerticalAlignment = xlCenter
+        .Rows(1).RowHeight = 35
+        
+        ' 요약 박스
+        .Range("A3:D3").Merge
+        .Range("A3").value = "?? 판매 실적 요약"
+        .Range("A3").Font.Bold = True
+        .Range("A3").Font.Size = 11
+        .Range("A3").Interior.color = RGB(217, 225, 242)
+        .Range("A3").HorizontalAlignment = xlLeft
+        
+        .Cells(4, 1).value = "총 판매수량"
+        .Cells(4, 2).Formula = "=SUM(판매데이터!F2:F" & lastRow & ")"
+        .Cells(4, 2).NumberFormat = "#,##0 개"
+        .Cells(4, 2).Font.Bold = True
+        .Cells(4, 2).Font.Size = 12
+        .Cells(4, 2).Font.color = RGB(0, 112, 192)
+        
+        .Cells(5, 1).value = "총 판매금액"
+        .Cells(5, 2).Formula = "=SUM(판매데이터!G2:G" & lastRow & ")"
+        .Cells(5, 2).NumberFormat = "#,##0 원"
+        .Cells(5, 2).Font.Bold = True
+        .Cells(5, 2).Font.Size = 12
+        .Cells(5, 2).Font.color = RGB(192, 0, 0)
+        
+        .Range("A3:D5").Borders.LineStyle = xlContinuous
+        .Range("A3:D5").Borders.Weight = xlThin
+        .Range("A3:D5").Borders.color = RGB(68, 114, 196)
+        
+        currentRow = 7
+        
+        ' 일자별 판매 현황
+        .Cells(currentRow, 1).value = "?? 일자별 판매 현황"
+        .Cells(currentRow, 1).Font.Bold = True
+        .Cells(currentRow, 1).Font.Size = 11
+        .Range(.Cells(currentRow, 1), .Cells(currentRow, 3)).Interior.color = RGB(217, 225, 242)
+        currentRow = currentRow + 1
+        
+        .Cells(currentRow, 1).value = "판매일"
+        .Cells(currentRow, 2).value = "판매수량"
+        .Cells(currentRow, 3).value = "판매금액"
+        .Range(.Cells(currentRow, 1), .Cells(currentRow, 3)).Font.Bold = True
+        .Range(.Cells(currentRow, 1), .Cells(currentRow, 3)).Interior.color = RGB(68, 114, 196)
+        .Range(.Cells(currentRow, 1), .Cells(currentRow, 3)).Font.color = RGB(255, 255, 255)
+        .Range(.Cells(currentRow, 1), .Cells(currentRow, 3)).HorizontalAlignment = xlCenter
+        currentRow = currentRow + 1
+        
+        Dim dateStartRow As Long
+        dateStartRow = currentRow
+        
+        Dim dateDict As Object
+        Dim cell As Range
+        Set dateDict = CreateObject("Scripting.Dictionary")
+        
+        For Each cell In wsData.Range("A2:A" & lastRow)
+            If Not dateDict.exists(cell.value) And cell.value <> "" Then
+                dateDict.Add cell.value, Nothing
+            End If
+        Next cell
+        
+        Dim dates As Variant
+        dates = dateDict.Keys
+        
+        For i = 0 To dateDict.Count - 1
+            .Cells(currentRow + i, 1).value = dates(i)
+            .Cells(currentRow + i, 1).NumberFormat = "yyyy-mm-dd"
+            .Cells(currentRow + i, 2).Formula = "=SUMIF(판매데이터!$A$2:$A$" & lastRow & "," & _
+                .Cells(currentRow + i, 1).Address & ",판매데이터!$F$2:$F$" & lastRow & ")"
+            .Cells(currentRow + i, 2).NumberFormat = "#,##0"
+            .Cells(currentRow + i, 3).Formula = "=SUMIF(판매데이터!$A$2:$A$" & lastRow & "," & _
+                .Cells(currentRow + i, 1).Address & ",판매데이터!$G$2:$G$" & lastRow & ")"
+            .Cells(currentRow + i, 3).NumberFormat = "#,##0"
+            
+            If i Mod 2 = 0 Then
+                .Range(.Cells(currentRow + i, 1), .Cells(currentRow + i, 3)).Interior.color = RGB(242, 242, 242)
+            End If
+        Next i
+        
+        .Range(.Cells(dateStartRow - 1, 1), .Cells(currentRow + dateDict.Count - 1, 3)).Borders.LineStyle = xlContinuous
+        
+        ' 매장별 판매 현황
+        currentRow = 7
+        
+        .Cells(currentRow, 5).value = "?? 매장별 판매 현황"
+        .Cells(currentRow, 5).Font.Bold = True
+        .Cells(currentRow, 5).Font.Size = 11
+        .Range(.Cells(currentRow, 5), .Cells(currentRow, 7)).Interior.color = RGB(217, 225, 242)
+        currentRow = currentRow + 1
+        
+        .Cells(currentRow, 5).value = "판매매장"
+        .Cells(currentRow, 6).value = "판매수량"
+        .Cells(currentRow, 7).value = "판매금액"
+        .Range(.Cells(currentRow, 5), .Cells(currentRow, 7)).Font.Bold = True
+        .Range(.Cells(currentRow, 5), .Cells(currentRow, 7)).Interior.color = RGB(68, 114, 196)
+        .Range(.Cells(currentRow, 5), .Cells(currentRow, 7)).Font.color = RGB(255, 255, 255)
+        .Range(.Cells(currentRow, 5), .Cells(currentRow, 7)).HorizontalAlignment = xlCenter
+        currentRow = currentRow + 1
+        
+        Dim storeStartRow As Long
+        storeStartRow = currentRow
+        
+        Dim storeDict As Object
+        Set storeDict = CreateObject("Scripting.Dictionary")
+        
+        For Each cell In wsData.Range("B2:B" & lastRow)
+            If Not storeDict.exists(cell.value) And cell.value <> "" Then
+                storeDict.Add cell.value, Nothing
+            End If
+        Next cell
+        
+        Dim stores As Variant
+        stores = storeDict.Keys
+        
+        For i = 0 To storeDict.Count - 1
+            .Cells(currentRow + i, 5).value = stores(i)
+            .Cells(currentRow + i, 6).Formula = "=SUMIF(판매데이터!$B$2:$B$" & lastRow & ",""" & stores(i) & """,판매데이터!$F$2:$F$" & lastRow & ")"
+            .Cells(currentRow + i, 6).NumberFormat = "#,##0"
+            .Cells(currentRow + i, 7).Formula = "=SUMIF(판매데이터!$B$2:$B$" & lastRow & ",""" & stores(i) & """,판매데이터!$G$2:$G$" & lastRow & ")"
+            .Cells(currentRow + i, 7).NumberFormat = "#,##0"
+            
+            If i Mod 2 = 0 Then
+                .Range(.Cells(currentRow + i, 5), .Cells(currentRow + i, 7)).Interior.color = RGB(242, 242, 242)
+            End If
+        Next i
+        
+        .Range(.Cells(storeStartRow - 1, 5), .Cells(currentRow + storeDict.Count - 1, 7)).Borders.LineStyle = xlContinuous
+        
+        ' 스타일
+        .Range(.Cells(dateStartRow, 1), .Cells(currentRow + dateDict.Count - 1, 3)).HorizontalAlignment = xlCenter
+        .Range(.Cells(storeStartRow, 5), .Cells(currentRow + storeDict.Count - 1, 7)).HorizontalAlignment = xlCenter
+        
+        .Columns("A:H").AutoFit
+        
+        For i = 1 To 8
+            If .Columns(i).ColumnWidth < 12 Then
+                .Columns(i).ColumnWidth = 12
+            End If
+        Next i
+        
+        .Rows("3:1000").RowHeight = 20
+        ActiveWindow.DisplayGridlines = False
+    End With
+    
+    On Error GoTo 0
+End Sub
+
+' 누적 데이터 요약 생성 (보너스 기능)
+Public Sub CreateAccumulatedSummary()
+    On Error GoTo ErrorHandler
+    
+    Dim wsAccum As Worksheet
+    Dim wsSummary As Worksheet
+    Dim lastRow As Long
+    
+    Set wsAccum = ThisWorkbook.Sheets(SHEET_누적데이터)
+    
+    On Error Resume Next
+    Set wsSummary = ThisWorkbook.Sheets("누적데이터요약")
+    On Error GoTo ErrorHandler
+    
+    If Not wsSummary Is Nothing Then
+        Application.DisplayAlerts = False
+        wsSummary.Delete
+        Application.DisplayAlerts = True
+    End If
+    
+    Set wsSummary = ThisWorkbook.Sheets.Add(After:=wsAccum)
+    wsSummary.Name = "누적데이터요약"
+    
+    lastRow = wsAccum.Cells(wsAccum.Rows.Count, 1).End(xlUp).Row
+    
+    If lastRow < 2 Then
+        MsgBox "누적 데이터가 비어있습니다.", vbExclamation
+        Exit Sub
+    End If
+    
+    ' 전체 기간 요약
+    With wsSummary
+        .Cells(1, 1).value = "누적 판매 데이터 요약"
+        .Cells(1, 1).Font.Size = 16
+        .Cells(1, 1).Font.Bold = True
+        
+        Dim minDate As Date, maxDate As Date
+        Dim totalQty As Long, totalAmt As Currency
+        
+        minDate = Application.WorksheetFunction.Min(wsAccum.Range("A2:A" & lastRow))
+        maxDate = Application.WorksheetFunction.Max(wsAccum.Range("A2:A" & lastRow))
+        totalQty = Application.WorksheetFunction.Sum(wsAccum.Range("D2:D" & lastRow))
+        totalAmt = Application.WorksheetFunction.Sum(wsAccum.Range("I2:I" & lastRow))
+        
+        .Cells(3, 1).value = "데이터 기간"
+        .Cells(3, 2).value = Format(minDate, "yyyy-mm-dd") & " ~ " & Format(maxDate, "yyyy-mm-dd")
+        
+        .Cells(4, 1).value = "총 판매수량"
+        .Cells(4, 2).value = totalQty
+        .Cells(4, 2).NumberFormat = "#,##0 개"
+        
+        .Cells(5, 1).value = "총 판매금액"
+        .Cells(5, 2).value = totalAmt
+        .Cells(5, 2).NumberFormat = "#,##0 원"
+        
+        .Cells(6, 1).value = "평균 단가"
+        .Cells(6, 2).value = totalAmt / totalQty
+        .Cells(6, 2).NumberFormat = "#,##0 원"
+        
+        .Cells(7, 1).value = "데이터 건수"
+        .Cells(7, 2).value = lastRow - 1
+        .Cells(7, 2).NumberFormat = "#,##0 건"
+        
+        .Columns("A:B").AutoFit
+    End With
+    
+    MsgBox "누적 데이터 요약이 생성되었습니다!", vbInformation
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "누적 요약 생성 중 오류: " & Err.Description, vbCritical
+End Sub
+

@@ -1,0 +1,238 @@
+Attribute VB_Name = "Module4"
+Option Explicit
+
+' ========================================
+' 확장된 시스템설정 시트 생성
+' ========================================
+
+Public Sub 시스템설정시트_생성()
+    On Error Resume Next
+    
+    Dim ws As Worksheet
+    Application.DisplayAlerts = False
+    ThisWorkbook.Sheets("시스템설정").Delete
+    Application.DisplayAlerts = True
+    On Error GoTo 0
+    
+    Set ws = ThisWorkbook.Sheets.Add
+    ws.Name = "시스템설정"
+    
+    With ws
+        ' ========== 헤더 ==========
+        .Cells(1, 1) = "설정항목"
+        .Cells(1, 2) = "설정값"
+        .Cells(1, 3) = "설명"
+        .Range("A1:C1").Font.Bold = True
+        .Range("A1:C1").Interior.color = RGB(68, 114, 196)
+        .Range("A1:C1").Font.color = RGB(255, 255, 255)
+        
+        Dim Row As Long
+        Row = 2
+        
+        ' ========== 1. 파일 경로 설정 ==========
+        .Cells(Row, 1) = "[카테고리] 파일 경로"
+        .Cells(Row, 1).Font.Bold = True
+        .Cells(Row, 1).Interior.color = RGB(217, 225, 242)
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "기본저장경로"
+        .Cells(Row, 2) = "C:\판매데이터\"
+        .Cells(Row, 3) = "브랜드별 파일 저장 위치"
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "파일명접두어"
+        .Cells(Row, 2) = "원브릿지_"
+        .Cells(Row, 3) = "파일명 앞부분"
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "파일명접미어"
+        .Cells(Row, 2) = "_판매현황_"
+        .Cells(Row, 3) = "파일명 중간부분"
+        Row = Row + 1
+        
+        ' ========== 2. 외부파일 데이터 구조 ==========
+        Row = Row + 1
+        .Cells(Row, 1) = "[카테고리] 외부파일 열 구조"
+        .Cells(Row, 1).Font.Bold = True
+        .Cells(Row, 1).Interior.color = RGB(217, 225, 242)
+        .Range(.Cells(Row, 1), .Cells(Row, 3)).Merge
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "외부_바코드열"
+        .Cells(Row, 2) = "1"
+        .Cells(Row, 3) = "외부파일의 바코드 열 번호 (A=1)"
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "외부_상품명열"
+        .Cells(Row, 2) = "2"
+        .Cells(Row, 3) = "외부파일의 상품명 열 번호 (B=2) ?중요"
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "외부_판매수량열"
+        .Cells(Row, 2) = "5"
+        .Cells(Row, 3) = "외부파일의 판매수량 열 번호"
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "외부_판매금액열"
+        .Cells(Row, 2) = "9"
+        .Cells(Row, 3) = "외부파일의 판매금액 열 번호 (I=9)"
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "외부_마지막열"
+        .Cells(Row, 2) = "9"
+        .Cells(Row, 3) = "외부파일에서 복사할 마지막 열"
+        Row = Row + 1
+        
+        ' ========== 3. 통합시트 열 구조 ==========
+        Row = Row + 1
+        .Cells(Row, 1) = "[카테고리] 통합시트 열 구조"
+        .Cells(Row, 1).Font.Bold = True
+        .Cells(Row, 1).Interior.color = RGB(217, 225, 242)
+        .Range(.Cells(Row, 1), .Cells(Row, 3)).Merge
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "통합_판매일열"
+        .Cells(Row, 2) = "1"
+        .Cells(Row, 3) = "A열: 판매일 (자동입력)"
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "통합_판매매장열"
+        .Cells(Row, 2) = "2"
+        .Cells(Row, 3) = "B열: 판매매장 (자동입력)"
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "통합_브랜드열"
+        .Cells(Row, 2) = "3"
+        .Cells(Row, 3) = "C열: 브랜드 (자동추출)"
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "통합_상품명열"
+        .Cells(Row, 2) = "5"
+        .Cells(Row, 3) = "브랜드 삽입 후 상품명 위치 ?중요"
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "통합_판매수량열"
+        .Cells(Row, 2) = "8"
+        .Cells(Row, 3) = "브랜드 삽입 후 판매수량 위치"
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "통합_판매금액열"
+        .Cells(Row, 2) = "9"
+        .Cells(Row, 3) = "브랜드 삽입 후 판매금액 위치"
+        Row = Row + 1
+        
+        ' ========== 4. 브랜드 처리 규칙 ==========
+        Row = Row + 1
+        .Cells(Row, 1) = "[카테고리] 브랜드 처리"
+        .Cells(Row, 1).Font.Bold = True
+        .Cells(Row, 1).Interior.color = RGB(217, 225, 242)
+        .Range(.Cells(Row, 1), .Cells(Row, 3)).Merge
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "브랜드추출방식"
+        .Cells(Row, 2) = "첫단어"
+        .Cells(Row, 3) = "첫단어 / 전체 / 구분자"
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "브랜드구분자"
+        .Cells(Row, 2) = " "
+        .Cells(Row, 3) = "공백, 언더바(_), 하이픈(-) 등"
+        Row = Row + 1
+        
+        ' ========== 5. 처리 옵션 ==========
+        Row = Row + 1
+        .Cells(Row, 1) = "[카테고리] 처리 옵션"
+        .Cells(Row, 1).Font.Bold = True
+        .Cells(Row, 1).Interior.color = RGB(217, 225, 242)
+        .Range(.Cells(Row, 1), .Cells(Row, 3)).Merge
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "요약시트생성"
+        .Cells(Row, 2) = "O"
+        .Cells(Row, 3) = "O=생성, X=생성안함"
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "중복검증"
+        .Cells(Row, 2) = "O"
+        .Cells(Row, 3) = "O=검증, X=검증안함"
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "진행표시"
+        .Cells(Row, 2) = "O"
+        .Cells(Row, 3) = "O=표시, X=표시안함"
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "누적데이터저장"
+        .Cells(Row, 2) = "O"
+        .Cells(Row, 3) = "O=저장, X=저장안함"
+        Row = Row + 1
+        
+        ' ========== 6. 날짜 처리 ==========
+        Row = Row + 1
+        .Cells(Row, 1) = "[카테고리] 날짜 형식"
+        .Cells(Row, 1).Font.Bold = True
+        .Cells(Row, 1).Interior.color = RGB(217, 225, 242)
+        .Range(.Cells(Row, 1), .Cells(Row, 3)).Merge
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "시트명날짜형식"
+        .Cells(Row, 2) = "MM.DD"
+        .Cells(Row, 3) = "외부파일 시트명 형식 (10.01)"
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "파일명날짜형식"
+        .Cells(Row, 2) = "YYMMDD"
+        .Cells(Row, 3) = "저장파일 날짜 형식 (241001)"
+        Row = Row + 1
+        
+        ' ========== 7. 디버그 옵션 ==========
+        Row = Row + 1
+        .Cells(Row, 1) = "[카테고리] 개발자 옵션"
+        .Cells(Row, 1).Font.Bold = True
+        .Cells(Row, 1).Interior.color = RGB(217, 225, 242)
+        .Range(.Cells(Row, 1), .Cells(Row, 3)).Merge
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "디버그모드"
+        .Cells(Row, 2) = "X"
+        .Cells(Row, 3) = "O=로그출력, X=로그없음"
+        Row = Row + 1
+        
+        .Cells(Row, 1) = "백업생성"
+        .Cells(Row, 2) = "X"
+        .Cells(Row, 3) = "O=자동백업, X=백업안함"
+        Row = Row + 1
+        
+        ' ========== 서식 정리 ==========
+        .Columns("A:C").AutoFit
+        .Range("A:A").ColumnWidth = 25
+        .Range("B:B").ColumnWidth = 20
+        .Range("C:C").ColumnWidth = 35
+        
+        ' 카테고리 행 병합
+        Dim cell As Range
+        For Each cell In .Range("A:A").Cells
+            If InStr(cell.value, "[카테고리]") > 0 Then
+                .Range(cell, cell.Offset(0, 2)).Merge
+                cell.HorizontalAlignment = xlLeft
+            End If
+        Next cell
+        
+        ' 테두리
+        .Range("A1:C" & Row).Borders.LineStyle = xlContinuous
+        
+        ' 자동 필터
+        .Range("A1:C1").AutoFilter
+        
+        ' 틀 고정
+        .Range("A2").Select
+        ActiveWindow.FreezePanes = True
+    End With
+    
+    MsgBox "? 시스템설정 시트가 생성되었습니다!" & vbCrLf & vbCrLf & _
+           "?? 중요 설정:" & vbCrLf & _
+           "? 외부_상품명열: 브랜드 추출 기준" & vbCrLf & _
+           "? 통합_상품명열: 삽입 후 위치" & vbCrLf & vbCrLf & _
+           "설정값을 확인하고 수정하세요!", vbInformation, "시스템설정"
+End Sub
+

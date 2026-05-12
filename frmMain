@@ -1,0 +1,730 @@
+Option Explicit
+
+' ========================================
+' UserForm: frmMain (v3.0 간소화)
+' 설명: 데이터 취합 + 데이터 출력 분리
+' ========================================
+
+Private Sub UserForm_Initialize()
+    ' 리스트박스 설정
+    With lstFiles
+        .ColumnCount = 3
+        .ColumnWidths = "200;100;0"
+        .Clear
+    End With
+    
+    ' 매장 목록 로드
+    LoadStoreList
+    
+    ' 체크박스 기본값
+    chkSummary.value = (GetSetting(SET_요약시트) = "O")
+    chkValidate.value = (GetSetting(SET_중복검증) = "O")
+    
+    ' 모드 초기화
+    InitializeMode
+    
+    ' 일자 필터 초기화
+    InitializeDateFilter
+    
+    ' 브랜드 필터 초기화
+    InitializeBrandFilter
+End Sub
+
+' ? 모드 초기화
+Private Sub InitializeMode()
+    ' 기본값: 데이터 취합 모드
+    If Not optModeCollect Is Nothing Then
+        optModeCollect.value = True
+        Call optModeCollect_Click
+    End If
+End Sub
+
+' ? 데이터 취합 모드 선택
+Private Sub optModeCollect_Click()
+    On Error Resume Next
+    
+    If Not optModeCollect.value Then Exit Sub
+    
+    ' 파일 관련 컨트롤 활성화
+    lstFiles.Enabled = True
+    btnAddFiles.Enabled = True
+    btnRemove.Enabled = True
+    btnClearAll.Enabled = True
+    cmbQuickStore.Enabled = True
+    btnApplyQuick.Enabled = True
+    
+    ' 필터 관련 비활성화
+    chkAllDates.Enabled = False
+    txtStartDate.Enabled = False
+    txtEndDate.Enabled = False
+    lblStartDate.Enabled = False
+    lblEndDate.Enabled = False
+    btnSetToday.Enabled = False
+    btnSetWeek.Enabled = False
+    btnSetMonth.Enabled = False
+    
+    chkAllBrands.Enabled = False
+    lstBrands.Enabled = False
+    lblBrandSelect.Enabled = False
+    btnRefreshBrands.Enabled = False
+    
+    ' 캡션 변경
+    Me.Caption = "?? 데이터 취합 - 원본파일을 누적데이터에 추가"
+    btnStart.Caption = "취합 시작"
+    
+    On Error GoTo 0
+End Sub
+
+' ? 데이터 출력 모드 선택
+Private Sub optModeExport_Click()
+    On Error Resume Next
+    
+    If Not optModeExport.value Then Exit Sub
+    
+    ' 파일 관련 컨트롤 비활성화
+    lstFiles.Enabled = False
+    btnAddFiles.Enabled = False
+    btnRemove.Enabled = False
+    btnClearAll.Enabled = False
+    cmbQuickStore.Enabled = False
+    btnApplyQuick.Enabled = False
+    
+    ' 필터 관련 활성화
+    chkAllDates.Enabled = True
+    chkAllBrands.Enabled = True
+    
+    ' 일자 필터 상태에 따라
+    If Not chkAllDates.value Then
+        txtStartDate.Enabled = True
+        txtEndDate.Enabled = True
+        lblStartDate.Enabled = True
+        lblEndDate.Enabled = True
+        btnSetToday.Enabled = True
+        btnSetWeek.Enabled = True
+        btnSetMonth.Enabled = True
+    End If
+    
+    ' 브랜드 필터 상태에 따라
+    If Not chkAllBrands.value Then
+        lstBrands.Enabled = True
+        lblBrandSelect.Enabled = True
+        btnRefreshBrands.Enabled = True
+    End If
+    
+    ' 브랜드 목록 로드
+    LoadBrandListFromAccumulated
+    
+    ' 캡션 변경
+    Me.Caption = "?? 데이터 출력 - 누적데이터에서 브랜드별 파일 생성"
+    btnStart.Caption = "출력 시작"
+    
+    On Error GoTo 0
+End Sub
+
+' 일자 필터 초기화
+Private Sub InitializeDateFilter()
+    On Error Resume Next
+    chkAllDates.value = True
+    txtStartDate.value = Format(Date - 7, "yyyy-mm-dd")
+    txtEndDate.value = Format(Date, "yyyy-mm-dd")
+    txtStartDate.Enabled = False
+    txtEndDate.Enabled = False
+    If Not lblStartDate Is Nothing Then lblStartDate.Enabled = False
+    If Not lblEndDate Is Nothing Then lblEndDate.Enabled = False
+    If Not btnSetToday Is Nothing Then btnSetToday.Enabled = False
+    If Not btnSetWeek Is Nothing Then btnSetWeek.Enabled = False
+    If Not btnSetMonth Is Nothing Then btnSetMonth.Enabled = False
+    On Error GoTo 0
+End Sub
+
+' 브랜드 필터 초기화
+Private Sub InitializeBrandFilter()
+    On Error Resume Next
+    chkAllBrands.value = True
+    lstBrands.Clear
+    lstBrands.Enabled = False
+    If Not lblBrandSelect Is Nothing Then lblBrandSelect.Enabled = False
+    If Not btnRefreshBrands Is Nothing Then btnRefreshBrands.Enabled = False
+    On Error GoTo 0
+End Sub
+
+' 전체 기간 체크박스
+Private Sub chkAllDates_Click()
+    On Error Resume Next
+    Dim isEnabled As Boolean
+    isEnabled = Not chkAllDates.value
+    
+    txtStartDate.Enabled = isEnabled
+    txtEndDate.Enabled = isEnabled
+    If Not lblStartDate Is Nothing Then lblStartDate.Enabled = isEnabled
+    If Not lblEndDate Is Nothing Then lblEndDate.Enabled = isEnabled
+    If Not btnSetToday Is Nothing Then btnSetToday.Enabled = isEnabled
+    If Not btnSetWeek Is Nothing Then btnSetWeek.Enabled = isEnabled
+    If Not btnSetMonth Is Nothing Then btnSetMonth.Enabled = isEnabled
+    On Error GoTo 0
+End Sub
+
+' 전체 브랜드 체크박스
+Private Sub chkAllBrands_Click()
+    On Error Resume Next
+    Dim isEnabled As Boolean
+    isEnabled = Not chkAllBrands.value
+    
+    lstBrands.Enabled = isEnabled
+    If Not lblBrandSelect Is Nothing Then lblBrandSelect.Enabled = isEnabled
+    If Not btnRefreshBrands Is Nothing Then btnRefreshBrands.Enabled = isEnabled
+    On Error GoTo 0
+End Sub
+
+' 날짜 버튼들
+Private Sub btnSetToday_Click()
+    On Error Resume Next
+    txtStartDate.value = Format(Date, "yyyy-mm-dd")
+    txtEndDate.value = Format(Date, "yyyy-mm-dd")
+    On Error GoTo 0
+End Sub
+
+Private Sub btnSetWeek_Click()
+    On Error Resume Next
+    txtStartDate.value = Format(Date - 7, "yyyy-mm-dd")
+    txtEndDate.value = Format(Date, "yyyy-mm-dd")
+    On Error GoTo 0
+End Sub
+
+Private Sub btnSetMonth_Click()
+    On Error Resume Next
+    txtStartDate.value = Format(Date - 30, "yyyy-mm-dd")
+    txtEndDate.value = Format(Date, "yyyy-mm-dd")
+    On Error GoTo 0
+End Sub
+
+' ? 누적데이터에서 브랜드 목록 로드
+Private Sub LoadBrandListFromAccumulated()
+    On Error Resume Next
+    
+    Dim ws As Worksheet
+    Dim wsAccum As Worksheet
+    Dim brandDict As Object
+    Dim lastRow As Long
+    Dim i As Long
+    Dim brandName As String
+    Dim useFlag As String
+    
+    Set brandDict = CreateObject("Scripting.Dictionary")
+    lstBrands.Clear
+    
+    ' 1. 브랜드설정에서 로드
+    Set ws = ThisWorkbook.Sheets("브랜드설정")
+    
+    If Not ws Is Nothing Then
+        lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+        
+        For i = 2 To lastRow
+            brandName = Trim(ws.Cells(i, 1).value)
+            useFlag = Trim(UCase(ws.Cells(i, 7).value))
+            
+            If brandName <> "" And useFlag = "O" Then
+                If Not brandDict.exists(brandName) Then
+                    brandDict.Add brandName, Nothing
+                    lstBrands.AddItem brandName
+                End If
+            End If
+        Next i
+    End If
+    
+    ' 2. 누적데이터에서 로드
+    Set wsAccum = ThisWorkbook.Sheets("누적데이터")
+    
+    If Not wsAccum Is Nothing Then
+        lastRow = wsAccum.Cells(wsAccum.Rows.Count, 3).End(xlUp).Row
+        
+        If lastRow > 1 Then
+            For i = 2 To lastRow
+                brandName = Trim(wsAccum.Cells(i, 3).value)
+                
+                If brandName <> "" And Not brandDict.exists(brandName) Then
+                    brandDict.Add brandName, Nothing
+                    lstBrands.AddItem brandName
+                End If
+            Next i
+        End If
+    End If
+    
+    If lstBrands.ListCount > 0 Then
+        Call SortListBox(lstBrands)
+        If Not lblBrandSelect Is Nothing Then
+            lblBrandSelect.Caption = "선택 - 총 " & lstBrands.ListCount & "개"
+        End If
+    Else
+        If Not lblBrandSelect Is Nothing Then
+            lblBrandSelect.Caption = "?? 브랜드 없음"
+        End If
+    End If
+    
+    On Error GoTo 0
+End Sub
+
+' 브랜드 목록 새로고침
+Private Sub btnRefreshBrands_Click()
+    On Error Resume Next
+    If optModeExport.value Then
+        LoadBrandListFromAccumulated
+    Else
+        MsgBox "데이터 출력 모드에서만 사용 가능합니다.", vbInformation
+    End If
+    On Error GoTo 0
+End Sub
+
+' 리스트박스 정렬
+Private Sub SortListBox(lb As MSForms.ListBox)
+    On Error Resume Next
+    Dim items() As String
+    Dim i As Long, j As Long
+    Dim temp As String
+    
+    If lb.ListCount <= 1 Then Exit Sub
+    
+    ReDim items(0 To lb.ListCount - 1)
+    
+    For i = 0 To lb.ListCount - 1
+        items(i) = lb.List(i)
+    Next i
+    
+    For i = 0 To UBound(items) - 1
+        For j = i + 1 To UBound(items)
+            If items(i) > items(j) Then
+                temp = items(i)
+                items(i) = items(j)
+                items(j) = temp
+            End If
+        Next j
+    Next i
+    
+    lb.Clear
+    For i = 0 To UBound(items)
+        lb.AddItem items(i)
+    Next i
+    
+    On Error GoTo 0
+End Sub
+
+' ========================================
+' 기존 함수들
+' ========================================
+
+Private Sub LoadStoreList()
+    Dim stores As Collection
+    Dim storeName As Variant
+    
+    On Error Resume Next
+    Set stores = GetStoreList()
+    On Error GoTo 0
+    
+    cmbQuickStore.Clear
+    
+    If Not stores Is Nothing Then
+        If stores.Count > 0 Then
+            For Each storeName In stores
+                cmbQuickStore.AddItem CStr(storeName)
+            Next storeName
+            
+            If cmbQuickStore.ListCount > 0 Then
+                cmbQuickStore.ListIndex = 0
+            End If
+        Else
+            cmbQuickStore.AddItem "미미라인"
+            cmbQuickStore.ListIndex = 0
+        End If
+    Else
+        cmbQuickStore.AddItem "미미라인"
+        cmbQuickStore.ListIndex = 0
+    End If
+End Sub
+
+Private Sub btnAddFiles_Click()
+    Dim fd As FileDialog
+    Dim i As Long
+    Dim fileName As String
+    Dim detectedStore As String
+    Dim newRow As Long
+    Dim autoDetectedCount As Long
+    Dim manualCount As Long
+    Dim resultMsg As String
+    
+    Set fd = Application.FileDialog(msoFileDialogFilePicker)
+    
+    With fd
+        .title = "데이터 파일을 선택하세요 (여러 개 선택 가능)"
+        .Filters.Clear
+        .Filters.Add "Excel Files", "*.xlsx; *.xlsm"
+        .AllowMultiSelect = True
+        
+        If .Show = -1 Then
+            autoDetectedCount = 0
+            manualCount = 0
+            
+            For i = 1 To .SelectedItems.Count
+                fileName = Dir(.SelectedItems(i))
+                detectedStore = AutoDetectStore(fileName)
+                
+                lstFiles.AddItem fileName
+                newRow = lstFiles.ListCount - 1
+                
+                lstFiles.List(newRow, 1) = detectedStore
+                lstFiles.List(newRow, 2) = .SelectedItems(i)
+                
+                If detectedStore <> "" Then
+                    autoDetectedCount = autoDetectedCount + 1
+                Else
+                    manualCount = manualCount + 1
+                End If
+            Next i
+            
+            UpdateStatus
+            
+            resultMsg = .SelectedItems.Count & "개 파일이 추가되었습니다." & vbCrLf & vbCrLf
+            
+            If autoDetectedCount > 0 Then
+                resultMsg = resultMsg & "? 자동 인식: " & autoDetectedCount & "개" & vbCrLf
+            End If
+            
+            If manualCount > 0 Then
+                resultMsg = resultMsg & "? 수동 설정 필요: " & manualCount & "개" & vbCrLf
+                resultMsg = resultMsg & "   → 파일을 더블클릭하여 매장을 선택하세요!" & vbCrLf
+            End If
+            
+            MsgBox resultMsg, vbInformation, "파일 추가 완료"
+        End If
+    End With
+End Sub
+
+Private Function AutoDetectStore(fileName As String) As String
+    Dim stores As Collection
+    Dim storeName As Variant
+    
+    On Error Resume Next
+    Set stores = GetStoreList()
+    On Error GoTo 0
+    
+    If Not stores Is Nothing Then
+        If stores.Count > 0 Then
+            For Each storeName In stores
+                If InStr(1, fileName, CStr(storeName), vbTextCompare) > 0 Then
+                    AutoDetectStore = CStr(storeName)
+                    Exit Function
+                End If
+            Next storeName
+        End If
+    End If
+    
+    AutoDetectStore = ""
+End Function
+
+Private Sub btnRemove_Click()
+    If lstFiles.ListIndex = -1 Then
+        MsgBox "삭제할 파일을 선택하세요.", vbExclamation
+        Exit Sub
+    End If
+    
+    lstFiles.RemoveItem lstFiles.ListIndex
+    UpdateStatus
+End Sub
+
+Private Sub btnClearAll_Click()
+    If lstFiles.ListCount = 0 Then Exit Sub
+    
+    If MsgBox("모든 파일을 삭제하시겠습니까?", vbQuestion + vbYesNo) = vbYes Then
+        lstFiles.Clear
+        UpdateStatus
+    End If
+End Sub
+
+Private Sub btnApplyQuick_Click()
+    Dim i As Long
+    Dim storeName As String
+    
+    If lstFiles.ListCount = 0 Then
+        MsgBox "파일을 먼저 추가하세요.", vbExclamation
+        Exit Sub
+    End If
+    
+    If cmbQuickStore.ListIndex = -1 Then
+        MsgBox "매장을 선택하세요.", vbExclamation
+        Exit Sub
+    End If
+    
+    storeName = cmbQuickStore.value
+    
+    For i = 0 To lstFiles.ListCount - 1
+        lstFiles.List(i, 1) = storeName
+    Next i
+    
+    MsgBox "모든 파일의 매장을 '" & storeName & "'로 설정했습니다.", vbInformation
+End Sub
+
+Private Sub lstFiles_DblClick(ByVal Cancel As MSForms.ReturnBoolean)
+    Dim selectedRow As Long
+    Dim stores As Collection
+    Dim storeListStr As String
+    Dim newStore As String
+    Dim i As Long
+    
+    If lstFiles.ListIndex = -1 Then Exit Sub
+    
+    selectedRow = lstFiles.ListIndex
+    
+    Set stores = GetStoreList()
+    
+    If stores.Count = 0 Then
+        MsgBox "매장설정 시트에 매장을 추가해주세요.", vbExclamation
+        Exit Sub
+    End If
+    
+    storeListStr = ""
+    For i = 1 To stores.Count
+        If i > 1 Then storeListStr = storeListStr & ", "
+        storeListStr = storeListStr & stores(i)
+    Next i
+    
+    newStore = Application.InputBox( _
+        Prompt:="매장명을 선택하거나 직접 입력하세요:" & vbCrLf & vbCrLf & _
+                "등록된 매장: " & storeListStr & vbCrLf & vbCrLf & _
+                "현재: " & lstFiles.List(selectedRow, 1), _
+        title:="매장 변경", _
+        Default:=lstFiles.List(selectedRow, 1), _
+        Type:=2)
+    
+    If newStore <> "False" And newStore <> "" Then
+        lstFiles.List(selectedRow, 1) = newStore
+        MsgBox "매장이 '" & newStore & "'로 변경되었습니다.", vbInformation
+    End If
+End Sub
+
+Private Sub UpdateStatus()
+    Dim msg As String
+    Dim storeSetCount As Long
+    Dim i As Long
+    
+    If lstFiles.ListCount = 0 Then
+        msg = "파일을 추가하세요."
+    Else
+        storeSetCount = 0
+        For i = 0 To lstFiles.ListCount - 1
+            If lstFiles.List(i, 1) <> "" Then
+                storeSetCount = storeSetCount + 1
+            End If
+        Next i
+        
+        msg = lstFiles.ListCount & "개 파일 추가됨"
+        
+        If storeSetCount < lstFiles.ListCount Then
+            msg = msg & " (매장 미설정: " & (lstFiles.ListCount - storeSetCount) & "개)"
+        Else
+            msg = msg & " ?"
+        End If
+    End If
+    
+    On Error Resume Next
+    If optModeCollect.value Then
+        Me.Caption = "?? 데이터 취합 - " & msg
+    End If
+    On Error GoTo 0
+End Sub
+
+' ? 시작 버튼
+Private Sub btnStart_Click()
+    On Error Resume Next
+    If optModeCollect.value Then
+        Call ExecuteCollectMode
+    ElseIf optModeExport.value Then
+        Call ExecuteExportMode
+    Else
+        ' 기본: 취합 모드
+        Call ExecuteCollectMode
+    End If
+    On Error GoTo 0
+End Sub
+
+' ? 모드 1: 데이터 취합
+Private Sub ExecuteCollectMode()
+    Dim i As Long
+    Dim fileList As New Collection
+    Dim fileInfo As Object
+    Dim missingStores As String
+    Dim missingCount As Long
+    Dim confirmMsg As String
+    
+    If lstFiles.ListCount = 0 Then
+        MsgBox "?? 파일을 추가하세요!", vbExclamation
+        Exit Sub
+    End If
+    
+    ' 매장 확인
+    missingStores = ""
+    missingCount = 0
+    
+    For i = 0 To lstFiles.ListCount - 1
+        If lstFiles.List(i, 1) = "" Or IsNull(lstFiles.List(i, 1)) Or Len(Trim(lstFiles.List(i, 1))) = 0 Then
+            missingCount = missingCount + 1
+            missingStores = missingStores & missingCount & ". " & lstFiles.List(i, 0) & vbCrLf
+        End If
+    Next i
+    
+    If missingStores <> "" Then
+        MsgBox "?? 다음 " & missingCount & "개 파일의 매장이 설정되지 않았습니다:" & vbCrLf & vbCrLf & _
+               missingStores, vbExclamation
+        Exit Sub
+    End If
+    
+    ' 확인
+    confirmMsg = "다음 " & lstFiles.ListCount & "개 파일을 누적데이터에 추가하시겠습니까?" & vbCrLf & vbCrLf
+    
+    For i = 0 To lstFiles.ListCount - 1
+        confirmMsg = confirmMsg & (i + 1) & ". " & lstFiles.List(i, 0) & " [" & lstFiles.List(i, 1) & "]" & vbCrLf
+    Next i
+    
+    If MsgBox(confirmMsg, vbQuestion + vbYesNo) = vbNo Then Exit Sub
+    
+    ' 파일 목록
+    For i = 0 To lstFiles.ListCount - 1
+        Set fileInfo = CreateObject("Scripting.Dictionary")
+        fileInfo("FileName") = lstFiles.List(i, 0)
+        fileInfo("StoreName") = lstFiles.List(i, 1)
+        fileInfo("FilePath") = lstFiles.List(i, 2)
+        fileList.Add fileInfo
+    Next i
+    
+    Me.Hide
+    
+    On Error Resume Next
+    If GetSetting(SET_진행표시) = "O" Then
+        Load frmProgress
+        frmProgress.Show vbModeless
+    End If
+    On Error GoTo 0
+    
+    ' ? 취합 실행
+    Call mdl_DataCollection.ProcessMultipleFilesToAccumulated(fileList)
+    
+    On Error Resume Next
+    If GetSetting(SET_진행표시) = "O" Then
+        Unload frmProgress
+    End If
+    On Error GoTo 0
+    
+    Unload Me
+End Sub
+
+' ? 모드 2: 데이터 출력
+Private Sub ExecuteExportMode()
+    Dim startDate As Date
+    Dim endDate As Date
+    Dim useAllDates As Boolean
+    Dim selectedBrands As Collection
+    Dim i As Long
+    Dim confirmMsg As String
+    
+    ' 누적데이터 확인
+    Dim wsAccum As Worksheet
+    On Error Resume Next
+    Set wsAccum = ThisWorkbook.Sheets("누적데이터")
+    On Error GoTo 0
+    
+    If wsAccum Is Nothing Then
+        MsgBox "?? 누적데이터 시트가 없습니다!" & vbCrLf & vbCrLf & _
+               "먼저 데이터 취합을 실행하세요.", vbExclamation
+        Exit Sub
+    End If
+    
+    Dim lastRow As Long
+    lastRow = wsAccum.Cells(wsAccum.Rows.Count, 3).End(xlUp).Row
+    
+    If lastRow < 2 Then
+        MsgBox "?? 누적데이터가 비어있습니다!", vbExclamation
+        Exit Sub
+    End If
+    
+    ' 일자 필터
+    useAllDates = chkAllDates.value
+    
+    If Not useAllDates Then
+        On Error Resume Next
+        startDate = CDate(txtStartDate.value)
+        endDate = CDate(txtEndDate.value)
+        On Error GoTo DateError
+        
+        If startDate = 0 Or endDate = 0 Then GoTo DateError
+        If startDate > endDate Then
+            MsgBox "?? 시작일이 종료일보다 늦습니다!", vbExclamation
+            Exit Sub
+        End If
+    End If
+    
+    ' 브랜드 선택
+    Set selectedBrands = New Collection
+    
+    If chkAllBrands.value Then
+        selectedBrands.Add "*ALL*"
+    Else
+        For i = 0 To lstBrands.ListCount - 1
+            If lstBrands.Selected(i) Then
+                selectedBrands.Add lstBrands.List(i)
+            End If
+        Next i
+        
+        If selectedBrands.Count = 0 Then
+            MsgBox "?? 추출할 브랜드를 선택하세요!", vbExclamation
+            Exit Sub
+        End If
+    End If
+    
+    ' 확인
+    confirmMsg = "브랜드별 파일을 생성하시겠습니까?" & vbCrLf & vbCrLf
+    
+    If useAllDates Then
+        confirmMsg = confirmMsg & "?? 전체 기간" & vbCrLf
+    Else
+        confirmMsg = confirmMsg & "?? " & Format(startDate, "yyyy-mm-dd") & " ~ " & Format(endDate, "yyyy-mm-dd") & vbCrLf
+    End If
+    
+    If chkAllBrands.value Then
+        confirmMsg = confirmMsg & "?? 전체 브랜드"
+    Else
+        confirmMsg = confirmMsg & "?? " & selectedBrands.Count & "개 브랜드"
+    End If
+    
+    If MsgBox(confirmMsg, vbQuestion + vbYesNo) = vbNo Then Exit Sub
+    
+    Me.Hide
+    
+    On Error Resume Next
+    If GetSetting(SET_진행표시) = "O" Then
+        Load frmProgress
+        frmProgress.Show vbModeless
+    End If
+    On Error GoTo 0
+    
+    ' ? 출력 실행
+    If useAllDates Then
+        Call mdl_BrandClassification.브랜드파일생성_누적데이터(selectedBrands)
+    Else
+        Call mdl_BrandClassification.브랜드파일생성_누적데이터_일자필터(selectedBrands, startDate, endDate)
+    End If
+    
+    On Error Resume Next
+    If GetSetting(SET_진행표시) = "O" Then
+        Unload frmProgress
+    End If
+    On Error GoTo 0
+    
+    Unload Me
+    Exit Sub
+    
+DateError:
+    MsgBox "?? 올바른 날짜를 입력하세요! (yyyy-mm-dd)", vbExclamation
+End Sub
+
+Private Sub btnCancel_Click()
+    Unload Me
+End Sub
+

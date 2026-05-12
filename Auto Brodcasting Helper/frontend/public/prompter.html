@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>🖥️ 실시간 통합 프롬프터 대시보드</title>
+    <script src="/nosleep.min.js"></script>
+    <style>
+        body { margin: 0; padding: 0; background: #0f172a; color: white; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+        
+        /* Security Gate Overlay */
+        #authGate {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 23, 42, 0.98); z-index: 9999;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+        }
+        #authGate h1 { color: #3b82f6; margin-bottom: 20px; font-size: 3rem; }
+        #authGate p { color: #94a3b8; font-size: 1.5rem; margin-bottom: 40px; padding: 0 40px; line-height: 1.5; }
+        #pinInput { font-size: 6rem; width: 300px; text-align: center; padding: 15px; border-radius: 16px; border: 3px solid #334155; background: #1e293b; color: white; outline: none; letter-spacing: 10px; font-family: monospace; }
+        #pinInput:focus { border-color: #3b82f6; }
+        #pinBtn { margin-top: 40px; padding: 25px 60px; font-size: 2rem; background: #3b82f6; font-weight: 900; color: white; border: none; border-radius: 16px; box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4); cursor: pointer; }
+        #pinBtn:active { transform: scale(0.95); }
+
+        /* Top Bar Dashboard */
+        .top-bar { 
+            background: #1e293b; padding: 15px 30px; border-bottom: 4px solid #3b82f6; 
+            display: flex; justify-content: space-between; align-items: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 50;
+        }
+        .top-bar-section { display: flex; align-items: center; gap: 20px; }
+        
+        .stat-badge { background: #334155; padding: 10px 20px; border-radius: 12px; display: flex; align-items: center; gap: 15px; border: 1px solid #475569; }
+        .stat-badge .label { color: #94a3b8; font-size: 1.2rem; font-weight: bold; text-transform: uppercase; }
+        .stat-badge .value { color: #facc15; font-size: 2rem; font-weight: 900; }
+        .stat-badge .value.money { color: #4ade80; }
+        .stat-badge .value.viewers { color: #fb7185; }
+
+        .title-area { font-size: 2rem; font-weight: 900; color: white; display: flex; gap: 10px; align-items: center;}
+        .full-screen-btn { background: #3b82f6; border: none; color: white; padding: 8px 15px; font-size: 1rem; border-radius: 8px; cursor: pointer; font-weight: bold; }
+
+        /* Main Content 2-Column Grid */
+        .main-wrapper { flex: 1; display: flex; overflow: hidden; }
+
+        /* Left: Prompter Cues (65%) */
+        .left-pane { flex: 0 0 65%; display: flex; flex-direction: column; overflow: hidden; }
+        #cueContainer { 
+            flex: 1; padding: 40px; overflow-y: auto; 
+            display: flex; flex-direction: column; gap: 30px; scroll-behavior: smooth;
+        }
+        
+        .cue-item { padding: 40px; border-radius: 20px; background: #111827; border: 2px solid #374151; box-shadow: 0 10px 30px rgba(0,0,0,0.5); opacity: 0; transform: translateY(20px); animation: slideUp 0.4s forwards; }
+        @keyframes slideUp { to { opacity: 1; transform: translateY(0); } }
+        .cue-text { font-size: 3.5rem; font-weight: 900; color: #facc15; line-height: 1.4; word-break: keep-all; }
+        
+        .product-card { background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); border-color: #4f46e5; text-align: center; }
+        .product-name { font-size: 3rem; font-weight: 900; color: white; margin-bottom: 20px; }
+        .stats-grid { display: flex; justify-content: space-around; background: rgba(0,0,0,0.4); border-radius: 20px; padding: 25px; }
+        .stat-box { display: flex; flex-direction: column; align-items: center; }
+        .stat-label-small { font-size: 1.2rem; color: #818cf8; margin-bottom: 10px; font-weight: bold; }
+        .stat-value-large { font-size: 3.5rem; font-weight: 900; color: white; }
+        .stat-value-large.highlight { color: #fca5a5; }
+
+        /* Right: Live Chat (35%) */
+        #chatContainer {
+            flex: 0 0 35%; background: #020617; border-left: 2px solid #334155; 
+            display: flex; flex-direction: column; overflow: hidden;
+        }
+        .chat-header { background: #0f172a; padding: 15px; font-size: 1.5rem; font-weight: bold; text-align: center; color: #60a5fa; border-bottom: 2px solid #1e293b; }
+        #chatList { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; scroll-behavior: smooth; }
+        
+        .chat-bubble { background: #1e293b; padding: 15px 20px; border-radius: 12px; border-left: 4px solid #3b82f6; animation: fadeIn 0.3s forwards; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .chat-nick { font-size: 1.2rem; font-weight: bold; color: #94a3b8; margin-bottom: 5px; }
+        .chat-msg { font-size: 1.5rem; color: white; line-height: 1.4; word-break: break-all; white-space: pre-wrap; }
+
+        .system-msg { text-align: center; color: #6b7280; font-size: 2rem; font-weight: bold; margin-top: 50px; }
+
+    </style>
+</head>
+<body>
+
+    <!-- AUTH GATEWAY -->
+    <div id="authGate">
+        <h1>🔐 대시보드 보안 연결</h1>
+        <p>비인가자의 방송 데이터 탈취를 막기 위해 보안 연결을 사용합니다.<br><br>PC 주 화면에 표시된 <b>일회성 보안 PIN 4자리</b>를 입력하세요.</p>
+        <input type="number" id="pinInput" placeholder="0000" maxlength="4" />
+        <button id="pinBtn">인증 후 대시보드 열기</button>
+    </div>
+
+    <!-- TOP BAR -->
+    <div class="top-bar">
+        <div></div> <!-- Spacer -->
+        <div class="title-area">
+            🔴 LIVE PROMPTER
+            <button class="full-screen-btn" onclick="toggleFullScreen()">⛶</button>
+            <span id="wakeLockBadge" style="font-size:1rem; padding: 6px 14px; border-radius: 20px; background:#1e293b; border: 1px solid #334155; color:#6b7280; font-weight:bold;">💤 화면유지 대기</span>
+        </div>
+        <div></div> <!-- Spacer -->
+    </div>
+
+    <!-- MAIN WRAPPER -->
+    <div class="main-wrapper">
+        <!-- LEFT: CUE & STATS -->
+        <div class="left-pane">
+            <div id="cueContainer">
+                <div class="system-msg">서버 데이터를 연결 중입니다...</div>
+            </div>
+            <!-- GLOBAL STATS (BOTTOM FIXED) -->
+            <div style="background: rgba(17, 24, 39, 1); border-top: 2px solid #334155; padding: 25px 40px; display: flex; justify-content: space-between; align-items: center; z-index: 10;">
+                <div style="color: #94a3b8; font-size: 2rem; font-weight: bold; letter-spacing: 2px;">전체 방송 누적 통계</div>
+                <div style="display: flex; gap: 30px;">
+                    <div class="stat-badge" style="background: rgba(17, 24, 39, 0.9); border: 1px solid #facc15; box-shadow: 0 5px 15px rgba(250,204,21,0.2); border-radius: 12px; padding: 15px 30px;">
+                        <span class="label" style="color: #facc15;">TOTAL SOLD</span>
+                        <span class="value" id="topTotalSold" style="font-size: 2.8rem; color: #facc15; font-family: monospace;">0개</span>
+                    </div>
+                    <div class="stat-badge" style="background: rgba(17, 24, 39, 0.9); border: 1px solid #facc15; box-shadow: 0 5px 15px rgba(250,204,21,0.2); border-radius: 12px; padding: 15px 30px;">
+                        <span class="label" style="color: #facc15;">TOTAL REVENUE</span>
+                        <span class="value money" id="topTotalRevenue" style="font-size: 2.8rem; color: #facc15; font-family: monospace;">₩0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- RIGHT: CHAT -->
+        <div id="chatContainer">
+            <div class="chat-header">💬 실시간 채팅</div>
+            <div id="chatList"></div>
+        </div>
+    </div>
+
+    <script>
+        const authGate = document.getElementById('authGate');
+        const pinInput = document.getElementById('pinInput');
+        const pinBtn = document.getElementById('pinBtn');
+        const cueContainer = document.getElementById('cueContainer');
+        const chatList = document.getElementById('chatList');
+        
+        // Stats DOM
+        const topTotalSold = document.getElementById('topTotalSold');
+        const topTotalRevenue = document.getElementById('topTotalRevenue');
+
+        let ws;
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws-signal`;
+
+        function connectWS() {
+            ws = new WebSocket(wsUrl);
+            ws.onopen = () => console.log('✅ WS Server Connected');
+            
+            ws.onmessage = (event) => {
+                try {
+                    const payload = JSON.parse(event.data);
+                    
+                    if (payload.type === 'PING') {
+                        ws.send(JSON.stringify({ type: 'PONG' }));
+                        return;
+                    }
+
+                    if (payload.type === 'AUTH_REQUIRED') {
+                        authGate.style.display = 'flex';
+                    }
+                    if (payload.type === 'AUTH_SUCCESS') {
+                        authGate.style.display = 'none';
+                        cueContainer.innerHTML = '<div class="system-msg">대기 중... 방송을 시작하세요.</div>';
+                    }
+                    if (payload.type === 'AUTH_FAILED') {
+                        alert("❌ 보안 인증 실패: 비밀번호를 다시 확인하세요.");
+                        pinInput.value = '';
+                        pinInput.focus();
+                    }
+                    if (payload.type === 'SHOW_CUE') {
+                        renderCue(payload.data);
+                    }
+                    // 실시간 시청자 채팅 (스니퍼 → 서버 → 전체 브로드캐스트)
+                    if (payload.type === 'CHAT_MSG' || payload.type === 'SALES_UPDATE') {
+                        renderChat(payload.data);
+                    }
+                    if (payload.type === 'SYNC_GLOBAL_STATS') {
+                        updateGlobalStats(payload.data);
+                    }
+                    // 봇/시스템 메시지 (SNIFFER_LOG, BOT_REPLY)
+                    if (payload.type === 'SNIFFER_LOG' || payload.type === 'BOT_REPLY') {
+                        renderChat({ nickname: '🤖 시스템', message: payload.data.message || payload.data.replyText, isSystem: true });
+                    }
+                    // 선착순 판매 종료 — 메인 대시보드와 동일한 봇 메시지 표시
+                    if (payload.type === 'FCFS_WINNERS') {
+                        const count = payload.data?.count ?? 0;
+                        renderChat({ nickname: '🤖 BOT', message: `📢 [판매종료] 당첨자 ${count}명 집계 완료!`, isSystem: true });
+                    }
+                } catch (e) {}
+            };
+
+            ws.onclose = () => {
+                cueContainer.innerHTML = '<div class="system-msg" style="color:#ef4444;">서버 연결 끊김. 재연결 중...</div>';
+                setTimeout(connectWS, 3000);
+            };
+        }
+
+        function updateGlobalStats(data) {
+            topTotalSold.innerText = `${data.totalSold.toLocaleString()}개`;
+            topTotalRevenue.innerText = `₩${data.totalRevenue.toLocaleString()}`;
+        }
+
+        function renderChat(data) {
+            if (!data || !data.message) return;
+
+            // ── 선착순 참여 메시지 필터 ──────────────────────────────────
+            // 시스템/봇 메시지는 항상 표시. 일반 시청자 채팅 중 단순 참여
+            // 메시지("저요", "1개" 등)는 태블릿에서 필터링해 가독성을 높임.
+            if (!data.isSystem) {
+                const msg = data.message.trim();
+                // 순수 참여 메시지 패턴: "저요" / "저요!!!" / "ㅈㅛ" / "1" / "1개" / "2개" 등
+                const participationOnly = /^[ㄱ-ㅎㅏ-ㅣ가-힣a-zA-Z]*저요[!~\s]*$|^ㅈ[ㅛ요][!~\s]*$|^\d+\s*개?$|^저[!\s]*$/;
+                if (participationOnly.test(msg)) return;
+            }
+
+            const div = document.createElement('div');
+            div.className = 'chat-bubble';
+            if(data.isSystem) div.style.borderLeftColor = '#facc15';
+
+            div.innerHTML = `
+                <div class="chat-nick" ${data.isSystem ? 'style="color:#facc15"' : ''}>${data.nickname}</div>
+                <div class="chat-msg" ${data.isSystem ? 'style="color:#fff"' : ''}>${data.message}</div>
+            `;
+            chatList.appendChild(div);
+
+            while (chatList.children.length > 50) {
+                chatList.removeChild(chatList.firstChild);
+            }
+            chatList.scrollTop = chatList.scrollHeight;
+        }
+
+        function renderCue(data) {
+            // [V4.4] Clear previous content to act as a single popup/replacing view
+            cueContainer.innerHTML = '';
+
+            const div = document.createElement('div');
+            div.className = 'cue-item';
+
+            if (data.mode === 'TEXT') {
+                div.innerHTML = `<div class="cue-text" style="font-size: 5rem; text-align: center; padding: 40px 0;">${data.text}</div>`;
+            } else if (data.mode === 'PRODUCT') {
+                const p = data.product;
+                const sales = p.sales || 0;
+                const stock = p.stock || 0;
+                const remaining = stock - sales;
+                const revAmount = p.price ? p.price * sales : 0;
+                
+                const price = p.price ? p.price.toLocaleString() : '-';
+                const expiry = p.expiry || '-';
+                const revenue = p.price ? revAmount.toLocaleString() : '-';
+
+                div.classList.add('product-card');
+                div.style.background = 'transparent';
+                div.style.border = 'none';
+                div.style.boxShadow = 'none';
+                div.style.padding = '0';
+
+                div.innerHTML = `
+                    <div style="font-size: 3.8rem; font-weight: 900; color: white; text-align: left; margin-bottom: 20px; line-height: 1.3; word-break: keep-all;">
+                        <span style="color: #facc15; font-family: monospace; font-size: 2.8rem; margin-right: 14px; opacity: 0.9;">[${p.code || '-'}]</span>${p.name}
+                    </div>
+
+                    <div style="background: rgba(17, 24, 39, 0.9); border: 1px solid #4b5563; border-radius: 15px; padding: 20px 40px; margin-bottom: 20px; display: flex; justify-content: space-around; align-items: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <span style="color: #9ca3af; font-size: 1.8rem; font-family: sans-serif; font-weight: bold;">PRICE</span>
+                            <span style="color: white; font-size: 2.8rem; font-weight: bold; font-family: monospace;">${price}</span>
+                        </div>
+                        <div style="width: 2px; height: 40px; background: #4b5563;"></div>
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <span style="color: #9ca3af; font-size: 1.8rem; font-family: sans-serif; font-weight: bold;">EXP</span>
+                            <span style="color: #f472b6; font-size: 2.8rem; font-weight: bold; font-family: monospace;">${expiry}</span>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
+                        <div style="background: rgba(17, 24, 39, 0.9); border: 1px solid #4b5563; padding: 15px 25px; border-radius: 15px; display: flex; flex-direction: column; align-items: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+                            <div style="color: #9ca3af; font-size: 1.2rem; font-family: sans-serif; font-weight: bold; margin-bottom: 6px; letter-spacing: 2px;">STOCK</div>
+                            <div style="color: #d1d5db; font-size: 2.8rem; font-weight: bold; font-family: monospace;">${stock}</div>
+                        </div>
+                        <div style="background: rgba(17, 24, 39, 0.9); border: 1px solid #4b5563; padding: 15px 25px; border-radius: 15px; display: flex; flex-direction: column; align-items: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+                            <div style="color: #9ca3af; font-size: 1.2rem; font-family: sans-serif; font-weight: bold; margin-bottom: 6px; letter-spacing: 2px;">SOLD</div>
+                            <div style="color: #ef4444; font-size: 2.8rem; font-weight: bold; font-family: monospace;">${sales}</div>
+                        </div>
+                        <div style="background: rgba(17, 24, 39, 0.9); border: 2px solid #60a5fa; padding: 15px 25px; border-radius: 15px; display: flex; flex-direction: column; align-items: center; box-shadow: 0 10px 25px rgba(59,130,246,0.3);">
+                            <div style="color: #60a5fa; font-size: 1.2rem; font-family: sans-serif; font-weight: bold; margin-bottom: 6px; letter-spacing: 2px;">REM</div>
+                            <div style="color: #60a5fa; font-size: 2.8rem; font-weight: bold; font-family: monospace;">${remaining}</div>
+                        </div>
+                        <div style="grid-column: span 3; background: rgba(17, 24, 39, 0.9); border: 1px solid #facc15; padding: 18px 25px; border-radius: 15px; display: flex; align-items: center; justify-content: center; gap: 30px; box-shadow: 0 10px 25px rgba(250,204,21,0.2); margin-top: 5px;">
+                            <span style="color: #facc15; font-size: 1.8rem; font-family: sans-serif; font-weight: bold;">TOTAL REVENUE</span>
+                            <span style="color: #facc15; font-size: 3.5rem; font-weight: bold; font-family: monospace;">₩${revenue}</span>
+                        </div>
+                    </div>
+                `;
+            }
+
+            cueContainer.appendChild(div);
+            
+            // Re-apply entrance animation
+            div.style.animation = 'none';
+            setTimeout(() => div.style.animation = 'slideUp 0.4s forwards', 10);
+        }
+
+        pinBtn.addEventListener('click', () => {
+            const pin = pinInput.value.trim();
+            if (pin.length < 4) { alert('4자리 숫자를 입력하세요.'); return; }
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'AUTH', pin: pin }));
+            }
+        });
+
+        pinInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') pinBtn.click();
+        });
+
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    alert(`오류: ${err.message}`);
+                });
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        }
+
+        connectWS();
+
+        // ── 화면 자동꺼짐 방지 (NoSleep.js) ────────────────────────────
+        const wakeLockBadge = document.getElementById('wakeLockBadge');
+        const noSleep = new NoSleep();
+        let noSleepEnabled = false;
+
+        const enableNoSleep = () => {
+            if (noSleepEnabled) return;
+            noSleep.enable().then(() => {
+                noSleepEnabled = true;
+                wakeLockBadge.textContent = '🟢 화면유지 ON';
+                wakeLockBadge.style.color = '#4ade80';
+                wakeLockBadge.style.borderColor = '#166534';
+                console.log('✅ [NoSleep] 화면유지 활성화');
+            }).catch(err => {
+                wakeLockBadge.textContent = '🔴 화면유지 실패';
+                wakeLockBadge.style.color = '#f87171';
+                wakeLockBadge.style.borderColor = '#7f1d1d';
+                console.warn('[NoSleep] 실패:', err.message);
+            });
+        };
+
+        // 브라우저 자동재생 정책: 반드시 사용자 인터랙션 후 활성화
+        wakeLockBadge.textContent = '⏳ 화면유지 대기 (터치)';
+        document.addEventListener('touchstart', enableNoSleep, { once: true });
+        document.addEventListener('click', enableNoSleep, { once: true });
+
+        // 탭 복귀 시 재활성화
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && !noSleepEnabled) {
+                enableNoSleep();
+            }
+        });
+    </script>
+</body>
+</html>

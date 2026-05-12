@@ -1,0 +1,161 @@
+Attribute VB_Name = "mdl_Charts"
+Option Explicit
+
+' ========================================
+' 모듈: mdl_Charts
+' 설명: 판매 추이 자동 차트 생성
+' ========================================
+
+' 판매 추이 차트 생성
+Public Sub CreateSalesChart(wsSummary As Worksheet, wsData As Worksheet)
+    On Error GoTo ErrorHandler
+    
+    Dim cht As ChartObject
+    Dim lastRow As Long
+    Dim chartTop As Long
+    Dim dateRange As Range
+    Dim amtRange As Range
+    
+    ' 일자별 데이터 범위 찾기 (요약 시트에서)
+    Dim dateStartRow As Long
+    Dim i As Long
+    
+    ' "?? 일자별 판매 현황" 찾기
+    For i = 1 To 100
+        If InStr(wsSummary.Cells(i, 1).value, "일자별") > 0 Then
+            dateStartRow = i + 3 ' 헤더 아래
+            Exit For
+        End If
+    Next i
+    
+    If dateStartRow = 0 Then Exit Sub
+    
+    ' 데이터 끝 찾기
+    lastRow = dateStartRow
+    Do While wsSummary.Cells(lastRow, 1).value <> "" And wsSummary.Cells(lastRow, 1).value <> "합계"
+        lastRow = lastRow + 1
+    Loop
+    lastRow = lastRow - 1
+    
+    If lastRow < dateStartRow Then Exit Sub
+    
+    ' 데이터 범위 설정
+    Set dateRange = wsSummary.Range(wsSummary.Cells(dateStartRow, 1), wsSummary.Cells(lastRow, 1))
+    Set amtRange = wsSummary.Range(wsSummary.Cells(dateStartRow, 3), wsSummary.Cells(lastRow, 3))
+    
+    ' 차트 위치 (일자별 테이블 오른쪽)
+    chartTop = dateStartRow - 2
+    
+    ' 차트 생성
+    Set cht = wsSummary.ChartObjects.Add( _
+        Left:=wsSummary.Cells(chartTop, 7).Left, _
+        Top:=wsSummary.Cells(chartTop, 7).Top, _
+        Width:=400, _
+        Height:=250)
+    
+    With cht.Chart
+        ' 차트 유형: 꺾은선형
+        .ChartType = xlLine
+        
+        ' 데이터 소스
+        .SetSourceData Union(dateRange, amtRange)
+        
+        ' 차트 제목
+        .HasTitle = True
+        .ChartTitle.Text = "일자별 판매 추이"
+        .ChartTitle.Font.Size = 12
+        .ChartTitle.Font.Bold = True
+        
+        ' 범례 제거 (단일 계열)
+        .HasLegend = False
+        
+        ' 축 설정
+        With .Axes(xlCategory)
+            .HasTitle = True
+            .AxisTitle.Text = "판매일"
+            .TickLabels.Orientation = 45 ' 기울임
+        End With
+        
+        With .Axes(xlValue)
+            .HasTitle = True
+            .AxisTitle.Text = "판매금액 (원)"
+            .TickLabels.NumberFormat = "#,##0"
+        End With
+        
+        ' 계열 서식
+        With .SeriesCollection(1)
+            .Name = "판매금액"
+            .Format.Line.ForeColor.RGB = RGB(68, 114, 196) ' 파란색
+            .Format.Line.Weight = 2.5
+            .MarkerStyle = xlMarkerStyleCircle
+            .MarkerSize = 6
+        End With
+        
+        ' 그리드
+        .Axes(xlValue).HasMajorGridlines = True
+        .Axes(xlValue).MajorGridlines.Format.Line.DashStyle = msoLineDash
+    End With
+    
+    Exit Sub
+    
+ErrorHandler:
+    ' 차트 생성 실패해도 계속 진행
+End Sub
+
+' 매장별 비교 차트 (선택사항)
+Public Sub CreateStoreComparisonChart(wsSummary As Worksheet)
+    On Error GoTo ErrorHandler
+    
+    Dim cht As ChartObject
+    Dim storeStartRow As Long
+    Dim lastRow As Long
+    Dim i As Long
+    Dim chartTop As Long
+    
+    ' "?? 매장별 판매 현황" 찾기
+    For i = 1 To 100
+        If InStr(wsSummary.Cells(i, 1).value, "매장별") > 0 Then
+            storeStartRow = i + 3
+            Exit For
+        End If
+    Next i
+    
+    If storeStartRow = 0 Then Exit Sub
+    
+    ' 데이터 끝 찾기
+    lastRow = storeStartRow
+    Do While wsSummary.Cells(lastRow, 1).value <> "" And wsSummary.Cells(lastRow, 1).value <> "합계"
+        lastRow = lastRow + 1
+    Loop
+    lastRow = lastRow - 1
+    
+    If lastRow < storeStartRow Then Exit Sub
+    
+    chartTop = storeStartRow - 2
+    
+    ' 차트 생성
+    Set cht = wsSummary.ChartObjects.Add( _
+        Left:=wsSummary.Cells(chartTop, 7).Left, _
+        Top:=wsSummary.Cells(chartTop, 7).Top, _
+        Width:=350, _
+        Height:=200)
+    
+    With cht.Chart
+        .ChartType = xlColumnClustered
+        
+        ' 데이터 범위
+        .SetSourceData wsSummary.Range(wsSummary.Cells(storeStartRow - 1, 1), wsSummary.Cells(lastRow, 3))
+        
+        .HasTitle = True
+        .ChartTitle.Text = "매장별 판매 현황"
+        
+        .HasLegend = True
+        .Legend.Position = xlLegendPositionBottom
+    End With
+    
+    Exit Sub
+    
+ErrorHandler:
+    ' 실패해도 계속 진행
+End Sub
+

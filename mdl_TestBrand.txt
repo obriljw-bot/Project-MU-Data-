@@ -1,0 +1,316 @@
+Attribute VB_Name = "mdl_TestBrand"
+Option Explicit
+
+' ========================================
+' ¸ðµâ: mdl_TestBrand
+' ¼³¸í: ºê·£µå ¼³Á¤ Å×½ºÆ® Àü¿ë
+' ========================================
+
+' ?? ÅëÇÕ ºê·£µå ¼³Á¤ Å×½ºÆ® (¸ÞÀÎ)
+Public Sub ÅëÇÕºê·£µå_¼³Á¤È®ÀÎ()
+    Dim integratedBrands As Collection
+    Dim brandItem As Object
+    Dim brands As Collection
+    Dim i As Long, j As Long
+    Dim msg As String
+    Dim detailMsg As String
+    
+    ' ·Îµå
+    Set integratedBrands = LoadIntegratedBrands()
+    
+    ' Immediate Window Ãâ·Â
+    Debug.Print vbCrLf & "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬"
+    Debug.Print "?? ÅëÇÕ ºê·£µå ¼³Á¤ È®ÀÎ °á°ú"
+    Debug.Print "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬"
+    Debug.Print "½ÇÇà ½Ã°£: " & Now
+    Debug.Print "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬"
+    
+    ' ¸Þ½ÃÁö ¹Ú½º¿ë
+    msg = "?? ÅëÇÕ ºê·£µå ¼³Á¤ È®ÀÎ" & vbCrLf & vbCrLf
+    msg = msg & "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬" & vbCrLf & vbCrLf
+    
+    If integratedBrands.Count = 0 Then
+        msg = msg & "? ÅëÇÕ ºê·£µå°¡ ¾ø½À´Ï´Ù!" & vbCrLf & vbCrLf
+        msg = msg & "?? Ã¼Å©»çÇ×:" & vbCrLf
+        msg = msg & "1. 'ºê·£µå¼³Á¤' ½ÃÆ®°¡ ÀÖ´Â°¡?" & vbCrLf
+        msg = msg & "2. G¿­(»ç¿ë¿©ºÎ)¿¡ 'O'°¡ ÀÖ´Â°¡?" & vbCrLf
+        msg = msg & "3. A¿­(ÅëÇÕºê·£µå¸í)ÀÌ ºñ¾îÀÖÁö ¾ÊÀº°¡?" & vbCrLf
+        msg = msg & "4. B~F¿­¿¡ ÇÏÀ§ºê·£µå°¡ ÀÖ´Â°¡?" & vbCrLf
+        
+        Debug.Print "? ÅëÇÕ ºê·£µå ¾øÀ½!"
+        Debug.Print vbCrLf & "ÀÚ¼¼ÇÑ ³»¿ëÀº ¾Æ·¡ Áø´ÜÀ» È®ÀÎÇÏ¼¼¿ä..."
+        
+        ' »ó¼¼ Áø´Ü ½ÇÇà
+        Call ºê·£µå¼³Á¤½ÃÆ®_»ó¼¼Áø´Ü
+    Else
+        msg = msg & "? ¹ß°ßµÈ ÅëÇÕ ºê·£µå: " & integratedBrands.Count & "°³" & vbCrLf & vbCrLf
+        
+        Debug.Print "? ÅëÇÕ ºê·£µå °³¼ö: " & integratedBrands.Count
+        Debug.Print vbCrLf
+        
+        For i = 1 To integratedBrands.Count
+            Set brandItem = integratedBrands(i)
+            Set brands = brandItem("Brands")
+            
+            msg = msg & i & ". ?? " & brandItem("Name") & vbCrLf
+            msg = msg & "   ÇÏÀ§ ºê·£µå (" & brands.Count & "°³):" & vbCrLf
+            
+            Debug.Print "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬"
+            Debug.Print i & ". ÅëÇÕºê·£µå: " & brandItem("Name")
+            Debug.Print "   ÇÏÀ§ºê·£µå °³¼ö: " & brands.Count
+            
+            For j = 1 To brands.Count
+                msg = msg & "   ? " & brands(j) & vbCrLf
+                Debug.Print "     [" & j & "] " & brands(j)
+            Next j
+            
+            msg = msg & vbCrLf
+            Debug.Print ""
+        Next i
+        
+        msg = msg & "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬" & vbCrLf
+        msg = msg & "?? ÀÌ ºê·£µåµéÀº ÅëÇÕ ÆÄÀÏ·Î »ý¼ºµË´Ï´Ù!"
+        
+        Debug.Print "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬"
+        Debug.Print "? ¼³Á¤ÀÌ Á¤»óÀÔ´Ï´Ù!"
+    End If
+    
+    Debug.Print "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬" & vbCrLf
+    
+    MsgBox msg, vbInformation, "ÅëÇÕ ºê·£µå ¼³Á¤ È®ÀÎ"
+End Sub
+
+' ?? ºê·£µå¼³Á¤ ½ÃÆ® »ó¼¼ Áø´Ü
+Public Sub ºê·£µå¼³Á¤½ÃÆ®_»ó¼¼Áø´Ü()
+    Dim ws As Worksheet
+    Dim lastRow As Long
+    Dim i As Long
+    Dim msg As String
+    Dim hasSheet As Boolean
+    Dim rowCount As Long
+    
+    Debug.Print vbCrLf & "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬"
+    Debug.Print "?? ºê·£µå¼³Á¤ ½ÃÆ® »ó¼¼ Áø´Ü"
+    Debug.Print "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬"
+    
+    msg = "?? ºê·£µå¼³Á¤ ½ÃÆ® Áø´Ü" & vbCrLf & vbCrLf
+    
+    ' ½ÃÆ® Á¸Àç È®ÀÎ
+    hasSheet = False
+    On Error Resume Next
+    Set ws = ThisWorkbook.Sheets("ºê·£µå¼³Á¤")
+    If Not ws Is Nothing Then hasSheet = True
+    On Error GoTo 0
+    
+    If Not hasSheet Then
+        msg = msg & "? 'ºê·£µå¼³Á¤' ½ÃÆ®¸¦ Ã£À» ¼ö ¾ø½À´Ï´Ù!" & vbCrLf & vbCrLf
+        msg = msg & "?? ÇØ°á¹æ¹ý:" & vbCrLf
+        msg = msg & "1. ½ÃÆ® ÀÌ¸§À» 'ºê·£µå¼³Á¤'À¸·Î º¯°æ" & vbCrLf
+        msg = msg & "2. ¶Ç´Â Alt+F8 ¡æ '¼³Á¤ÃÊ±âÈ­' ½ÇÇà"
+        
+        Debug.Print "? ½ÃÆ® ¾øÀ½!"
+        Debug.Print "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬" & vbCrLf
+        
+        MsgBox msg, vbCritical, "½ÃÆ® ¾øÀ½"
+        Exit Sub
+    End If
+    
+    msg = msg & "? ½ÃÆ® Á¸Àç: È®ÀÎ" & vbCrLf & vbCrLf
+    Debug.Print "? ½ÃÆ® ¹ß°ß: " & ws.Name
+    Debug.Print ""
+    
+    ' µ¥ÀÌÅÍ È®ÀÎ
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    rowCount = lastRow - 1
+    
+    msg = msg & "?? µ¥ÀÌÅÍ Çà ¼ö: " & rowCount & "°³" & vbCrLf & vbCrLf
+    Debug.Print "µ¥ÀÌÅÍ Çà ¼ö: " & rowCount & " (Çì´õ Á¦¿Ü)"
+    Debug.Print ""
+    
+    If rowCount = 0 Then
+        msg = msg & "? µ¥ÀÌÅÍ°¡ ¾ø½À´Ï´Ù!" & vbCrLf & vbCrLf
+        msg = msg & "?? 2ÇàºÎÅÍ µ¥ÀÌÅÍ¸¦ ÀÔ·ÂÇÏ¼¼¿ä."
+        
+        Debug.Print "? µ¥ÀÌÅÍ ¾øÀ½!"
+        Debug.Print "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬" & vbCrLf
+        
+        MsgBox msg, vbExclamation, "µ¥ÀÌÅÍ ¾øÀ½"
+        Exit Sub
+    End If
+    
+    ' °¢ Çà »ó¼¼ ºÐ¼®
+    msg = msg & "?? °¢ Çà ºÐ¼®:" & vbCrLf & vbCrLf
+    Debug.Print "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬"
+    Debug.Print "°¢ Çà »ó¼¼ ºÐ¼®:"
+    Debug.Print "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬"
+    
+    Dim validCount As Long
+    validCount = 0
+    
+    For i = 2 To lastRow
+        Dim rowStatus As String
+        Dim colA, colG As String
+        Dim subBrandCount As Long
+        Dim j As Long
+        
+        colA = Trim(ws.Cells(i, 1).value)
+        colG = Trim(UCase(ws.Cells(i, 7).value))
+        
+        subBrandCount = 0
+        For j = 2 To 6
+            If Trim(ws.Cells(i, j).value) <> "" Then
+                subBrandCount = subBrandCount + 1
+            End If
+        Next j
+        
+        Debug.Print i & "Çà: " & colA
+        Debug.Print "  ÅëÇÕºê·£µå¸í(A¿­): " & IIf(colA <> "", "? " & colA, "? ºñ¾îÀÖÀ½")
+        Debug.Print "  ÇÏÀ§ºê·£µå(B~F¿­): " & subBrandCount & "°³"
+        Debug.Print "  »ç¿ë¿©ºÎ(G¿­): [" & colG & "]"
+        
+        If colA = "" Then
+            rowStatus = "? A¿­ ºñ¾îÀÖÀ½"
+            Debug.Print "  ¡æ ? ÅëÇÕºê·£µå¸íÀÌ ¾øÀ½"
+        ElseIf subBrandCount = 0 Then
+            rowStatus = "? ÇÏÀ§ºê·£µå ¾øÀ½"
+            Debug.Print "  ¡æ ? ÇÏÀ§ºê·£µå°¡ ÇÏ³ªµµ ¾øÀ½"
+        ElseIf colG <> "O" Then
+            rowStatus = "? »ç¿ë¾ÈÇÔ (G¿­: " & colG & ")"
+            Debug.Print "  ¡æ ? »ç¿ë¿©ºÎ°¡ 'O'°¡ ¾Æ´Ô"
+        Else
+            rowStatus = "? Á¤»ó"
+            validCount = validCount + 1
+            Debug.Print "  ¡æ ? ÀÌ ÇàÀº Á¤»óÀÔ´Ï´Ù!"
+        End If
+        
+        msg = msg & i & "Çà: " & colA & " - " & rowStatus & vbCrLf
+        Debug.Print ""
+    Next i
+    
+    Debug.Print "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬"
+    Debug.Print "Á¤»ó µ¥ÀÌÅÍ: " & validCount & " / " & rowCount
+    Debug.Print "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬" & vbCrLf
+    
+    msg = msg & vbCrLf & "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬" & vbCrLf
+    msg = msg & "? Á¤»ó: " & validCount & " / ? ¹®Á¦: " & (rowCount - validCount)
+    
+    If validCount = 0 Then
+        msg = msg & vbCrLf & vbCrLf & "?? ¸ðµç Çà¿¡ ¹®Á¦°¡ ÀÖ½À´Ï´Ù!" & vbCrLf
+        msg = msg & "G¿­(»ç¿ë¿©ºÎ)À» 'O'·Î º¯°æÇÏ¼¼¿ä."
+    End If
+    
+    MsgBox msg, vbInformation, "»ó¼¼ Áø´Ü °á°ú"
+End Sub
+
+' ?? ¸ÅÀå ¼³Á¤ È®ÀÎ
+Public Sub ¸ÅÀå¼³Á¤_È®ÀÎ()
+    Dim stores As Collection
+    Dim storeName As Variant
+    Dim msg As String
+    Dim i As Long
+    
+    Set stores = GetStoreList()
+    
+    Debug.Print vbCrLf & "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬"
+    Debug.Print "?? ¸ÅÀå ¼³Á¤ È®ÀÎ °á°ú"
+    Debug.Print "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬"
+    
+    msg = "?? ¸ÅÀå ¼³Á¤ È®ÀÎ" & vbCrLf & vbCrLf
+    
+    If stores.Count = 0 Then
+        msg = msg & "? »ç¿ë °¡´ÉÇÑ ¸ÅÀåÀÌ ¾ø½À´Ï´Ù!" & vbCrLf & vbCrLf
+        msg = msg & "¸ÅÀå¼³Á¤ ½ÃÆ®ÀÇ F¿­(»ç¿ë¿©ºÎ)À»" & vbCrLf
+        msg = msg & "'O'·Î ¼³Á¤ÇÏ¼¼¿ä."
+        
+        Debug.Print "? ¸ÅÀå ¾øÀ½!"
+    Else
+        msg = msg & "? »ç¿ë °¡´ÉÇÑ ¸ÅÀå: " & stores.Count & "°³" & vbCrLf & vbCrLf
+        
+        Debug.Print "? ¸ÅÀå °³¼ö: " & stores.Count
+        Debug.Print ""
+        
+        i = 1
+        For Each storeName In stores
+            msg = msg & i & ". " & storeName & vbCrLf
+            Debug.Print i & ". " & storeName
+            i = i + 1
+        Next storeName
+    End If
+    
+    Debug.Print "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬" & vbCrLf
+    
+    MsgBox msg, vbInformation, "¸ÅÀå ¼³Á¤ È®ÀÎ"
+End Sub
+
+' ?? ½Ã½ºÅÛ ¼³Á¤ È®ÀÎ
+Public Sub ½Ã½ºÅÛ¼³Á¤_È®ÀÎ()
+    Dim msg As String
+    Dim basePath As String
+    
+    Debug.Print vbCrLf & "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬"
+    Debug.Print "?? ½Ã½ºÅÛ ¼³Á¤ È®ÀÎ"
+    Debug.Print "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬"
+    
+    msg = "?? ½Ã½ºÅÛ ¼³Á¤ È®ÀÎ" & vbCrLf & vbCrLf
+    
+    basePath = GetSetting(SET_±âº»°æ·Î)
+    
+    msg = msg & "?? ±âº»ÀúÀå°æ·Î:" & vbCrLf
+    If basePath = "" Then
+        msg = msg & "? ¼³Á¤µÇÁö ¾ÊÀ½!" & vbCrLf
+        Debug.Print "? ±âº»°æ·Î: ¹Ì¼³Á¤"
+    Else
+        msg = msg & basePath & vbCrLf
+        Debug.Print "? ±âº»°æ·Î: " & basePath
+        
+        If Dir(basePath, vbDirectory) <> "" Then
+            msg = msg & "? °æ·Î Á¸Àç" & vbCrLf
+            Debug.Print "   °æ·Î Á¸Àç: È®ÀÎ"
+        Else
+            msg = msg & "?? °æ·Î ¾øÀ½ (ÀÚµ¿ »ý¼ºµÊ)" & vbCrLf
+            Debug.Print "   °æ·Î ¾øÀ½: ÀÚµ¿ »ý¼º ¿¹Á¤"
+        End If
+    End If
+    
+    msg = msg & vbCrLf
+    msg = msg & "?? ÆÄÀÏ¸í ¼³Á¤:" & vbCrLf
+    msg = msg & "  Á¢µÎ¾î: " & GetSetting(SET_ÆÄÀÏÁ¢µÎ¾î) & vbCrLf
+    msg = msg & "  Á¢¹Ì¾î: " & GetSetting(SET_ÆÄÀÏÁ¢¹Ì¾î) & vbCrLf & vbCrLf
+    
+    msg = msg & "?? ±â´É ¼³Á¤:" & vbCrLf
+    msg = msg & "  ¿ä¾à½ÃÆ®: " & GetSetting(SET_¿ä¾à½ÃÆ®) & vbCrLf
+    msg = msg & "  Áßº¹°ËÁõ: " & GetSetting(SET_Áßº¹°ËÁõ) & vbCrLf
+    msg = msg & "  ÁøÇàÇ¥½Ã: " & GetSetting(SET_ÁøÇàÇ¥½Ã)
+    
+    Debug.Print "ÆÄÀÏÁ¢µÎ¾î: " & GetSetting(SET_ÆÄÀÏÁ¢µÎ¾î)
+    Debug.Print "ÆÄÀÏÁ¢¹Ì¾î: " & GetSetting(SET_ÆÄÀÏÁ¢¹Ì¾î)
+    Debug.Print "¿ä¾à½ÃÆ®: " & GetSetting(SET_¿ä¾à½ÃÆ®)
+    Debug.Print "Áßº¹°ËÁõ: " & GetSetting(SET_Áßº¹°ËÁõ)
+    Debug.Print "ÁøÇàÇ¥½Ã: " & GetSetting(SET_ÁøÇàÇ¥½Ã)
+    Debug.Print "¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬¦¬" & vbCrLf
+    
+    MsgBox msg, vbInformation, "½Ã½ºÅÛ ¼³Á¤"
+End Sub
+
+' ?? ÀüÃ¼ ¼³Á¤ ÇÑ¹ø¿¡ È®ÀÎ
+Public Sub ÀüÃ¼¼³Á¤_È®ÀÎ()
+    Debug.Print vbCrLf & vbCrLf
+    Debug.Print "????????????????????????????????????????"
+    Debug.Print "?      ?? ÀüÃ¼ ¼³Á¤ È®ÀÎ ½ÃÀÛ          ?"
+    Debug.Print "????????????????????????????????????????"
+    
+    Call ÅëÇÕºê·£µå_¼³Á¤È®ÀÎ
+    Call ¸ÅÀå¼³Á¤_È®ÀÎ
+    Call ½Ã½ºÅÛ¼³Á¤_È®ÀÎ
+    
+    Debug.Print vbCrLf
+    Debug.Print "????????????????????????????????????????"
+    Debug.Print "?      ? ÀüÃ¼ ¼³Á¤ È®ÀÎ ¿Ï·á          ?"
+    Debug.Print "????????????????????????????????????????"
+    Debug.Print vbCrLf
+    
+    MsgBox "? ÀüÃ¼ ¼³Á¤ È®ÀÎÀÌ ¿Ï·áµÇ¾ú½À´Ï´Ù!" & vbCrLf & vbCrLf & _
+           "Immediate Window (Ctrl+G)¿¡¼­" & vbCrLf & _
+           "»ó¼¼ ³»¿ëÀ» È®ÀÎÇÏ¼¼¿ä.", vbInformation, "¿Ï·á"
+End Sub
+
