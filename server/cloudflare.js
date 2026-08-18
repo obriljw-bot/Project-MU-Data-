@@ -44,24 +44,38 @@ async function startCloudflareTunnel(port) {
     return new Promise((resolve, reject) => {
         let isResolved = false;
         
-        // 1. Force kill existing zombies to prevent "delay" / "port in use" bugs
-        try {
-            console.log(`[Cloudflare] Cleanup: Killing any existing ${BINARY_NAME}...`);
-            require('child_process').execSync(`taskkill /f /im ${BINARY_NAME}`, { stdio: 'ignore' });
-        } catch (e) {}
+        const { execSync } = require('child_process');
+        const FIXED_URL = 'https://grip.makemerobot.cloud';
 
-        // 2. Timeout fallback so ws_server doesn't hang infinitely
+        // Timeout fallback
         const fallbackTimer = setTimeout(() => {
             if (!isResolved) {
                 isResolved = true;
-                console.error("[Cloudflare] ⚠️ Timeout! Failed to generate Tunnel URL within 30 seconds. Fallback to Local Network only.");
+                console.error("[Cloudflare] ⚠️ Timeout! Fallback to Local Network only.");
                 resolve(null);
             }
         }, 30000);
 
-        // Named Tunnel 방식: grip.makemerobot.cloud → localhost:5173 (고정 URL, 삼성브라우저 차단 없음)
+        // 1. 이미 cloudflared가 실행 중이면 재사용 (ERP와 공유)
+        try {
+            const taskList = execSync('tasklist', { encoding: 'utf8' });
+            if (taskList.toLowerCase().includes('cloudflared')) {
+                isResolved = true;
+                clearTimeout(fallbackTimer);
+                console.log(`[Cloudflare] ✅ 터널 이미 실행 중 — 재사용: ${FIXED_URL}`);
+                resolve(FIXED_URL);
+                return;
+            }
+        } catch (e) {}
+
+        // 2. 실행 중이 아니면 기존 프로세스 정리 후 새로 시작
+        try {
+            console.log(`[Cloudflare] Cleanup: Killing any existing ${BINARY_NAME}...`);
+            execSync(`taskkill /f /im ${BINARY_NAME}`, { stdio: 'ignore' });
+        } catch (e) {}
+
+        // Named Tunnel: grip.makemerobot.cloud → localhost:5173
         const TUNNEL_NAME = 'onebridge-erp';
-        const FIXED_URL = 'https://grip.makemerobot.cloud';
         console.log(`[Cloudflare] Starting named tunnel '${TUNNEL_NAME}'...`);
         tunnelProcess = spawn(BINARY_PATH, ['tunnel', 'run', TUNNEL_NAME]);
 
