@@ -20,6 +20,24 @@ let hasExtractedWinners = false;
 let pageRef = null;
 let lastWinnerCount = 0; // GLOBAL STATE (Shared between Chat & DOM Polling)
 
+// ── 영상 창 크기/위치 저장·복원 ────────────────────────────────────
+// 사용자가 수동으로 딱 맞게 배치한 창 크기를 저장해두고, 다음 실행 시
+// 그 값 그대로 자동 복원. 대시보드의 "창크기 저장" 버튼 → SAVE_VIDEO_WINDOW
+// 신호를 받으면 CDP로 현재 실제 창 좌표를 읽어 파일에 기록.
+const VIDEO_WINDOW_CONFIG_PATH = path.join(__dirname, 'video_window_config.json');
+
+function loadSavedWindowBounds() {
+    try { return JSON.parse(fs.readFileSync(VIDEO_WINDOW_CONFIG_PATH, 'utf8')); } catch { return null; }
+}
+
+async function saveCurrentWindowBounds(page) {
+    const client = await page.context().newCDPSession(page);
+    const { windowId } = await client.send('Browser.getWindowForTarget');
+    const { bounds } = await client.send('Browser.getWindowBounds', { windowId });
+    fs.writeFileSync(VIDEO_WINDOW_CONFIG_PATH, JSON.stringify(bounds, null, 2));
+    return bounds;
+}
+
 // ==========================================
 // 1. WebSocket Client & Control
 // ==========================================
@@ -55,6 +73,18 @@ function connectToDashboard() {
                 }
             }
 
+            // 영상 창 크기/위치 저장 (대시보드 버튼 클릭 시)
+            if (msg.type === 'SAVE_VIDEO_WINDOW') {
+                if (pageRef) {
+                    try {
+                        const bounds = await saveCurrentWindowBounds(pageRef);
+                        sendBotMessage(`📐 영상창 크기 저장됨: ${bounds.width}x${bounds.height} @ (${bounds.left},${bounds.top}) — 다음 실행부터 자동 적용`);
+                    } catch (e) {
+                        sendBotMessage(`❌ 영상창 크기 저장 실패: ${e.message}`);
+                    }
+                }
+            }
+
             // [NEW] Automatic Chat Sender Logic
             if (msg.type === 'SEND_CHAT' && msg.message) {
                 // 2초 내 동일 메시지 중복 방어 (서버 브로드캐스트 중복 수신 대비)
@@ -65,6 +95,17 @@ function connectToDashboard() {
                 }
                 lastSentChatMsg = msg.message;
                 lastSentChatTime = now;
+                // 큐에 순서대로 쌓아서 한 번에 하나씩만 실제 전송 — 동시 도착 시 서로 덮어쓰는 것 방지
+                chatSendQueue = chatSendQueue.then(() => sendChatToGrip(msg));
+            }
+        } catch (e) { console.error(e); }
+    });
+
+    ws.on('close', () => { setTimeout(connectToDashboard, 3000); });
+    ws.on('error', () => { });
+}
+
+async function sendChatToGrip(msg) {
                 console.log(`💬 [AUTO-MSG] Sending to Grip: ${msg.message}`);
                 if (pageRef) {
                     try {
@@ -175,12 +216,6 @@ function connectToDashboard() {
                         sendToDashboard('CHAT_SEND_RESULT', { success: false, error: e.message, requestId: msg.requestId });
                     }
                 }
-            }
-        } catch (e) { console.error(e); }
-    });
-
-    ws.on('close', () => { setTimeout(connectToDashboard, 3000); });
-    ws.on('error', () => { });
 }
 
 function sendToDashboard(type, data) {
@@ -200,6 +235,11 @@ let lastCartEventTime = 0;
 // SEND_CHAT 중복 방어 (2초 내 동일 메시지 재수신 차단)
 let lastSentChatMsg = '';
 let lastSentChatTime = 0;
+
+// [race condition 방지] 프리셋 순환 공지와 빠른전송 버튼이 거의 동시에 도착하면
+// 둘 다 같은 채팅 입력창을 동시에 자동화(fill/type + Enter)하면서 서로 덮어써
+// 하나가 유실되는 문제 발견. Promise 체인으로 직렬화해 한 번에 하나씩만 처리.
+let chatSendQueue = Promise.resolve();
 
 function onDOMChat(nickname, message) {
     // V3.4: Handle Special System Events from Browser
@@ -282,10 +322,30 @@ connectToDashboard();
 (async () => {
     console.log("🚀 Starting Grip Sniffer V3.2 (Debug Mode)...");
 
-    const browser = await chromium.launch({ headless: false });
-    const context = await browser.newContext();
-    const page = await context.newPage();
+    // ── 영상 창: 저장된 크기/위치가 있으면 복원, 없으면 기본 창 ──────────────
+    // 사용자가 대시보드의 "창크기 저장" 버튼으로 저장해둔 값이 있으면 그대로 적용.
+    const savedBounds = loadSavedWindowBounds();
+    const launchArgs = [];
+    if (savedBounds) {
+        launchArgs.push(`--window-position=${savedBounds.left},${savedBounds.top}`);
+        launchArgs.push(`--window-size=${savedBounds.width},${savedBounds.height}`);
+        console.log(`📐 저장된 영상창 크기 복원: ${savedBounds.width}x${savedBounds.height} @ (${savedBounds.left},${savedBounds.top})`);
+    }
+    const userDataDir = path.join(__dirname, '.pw-video-profile');
+    const context = await chromium.launchPersistentContext(userDataDir, {
+        headless: false,
+        viewport: null,
+        args: launchArgs,
+    });
+    const page = context.pages()[0] || await context.newPage();
     pageRef = page;
+
+    // 초기 실행 시 기본으로 그립 홈으로 이동 (이후 대시보드에서 실제 방송 URL로 UPDATE_URL 전송 시 전환)
+    try {
+        await page.goto('https://www.grip.show/', { waitUntil: 'domcontentloaded' });
+    } catch (e) {
+        console.warn('[초기 네비게이션] 실패:', e.message);
+    }
 
     await page.exposeFunction('bridgeChat', (nick, msg) => onDOMChat(nick, msg));
     await page.exposeFunction('bridgeLog', (msg) => console.log(`[DOM] ${msg}`));

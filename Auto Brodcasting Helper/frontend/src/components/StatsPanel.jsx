@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Activity, RefreshCw, Trophy, Download, Check, X } from 'lucide-react';
 
-export function StatsPanel({ trends, salesLogs = [], onApplyAll, onUpdateLogCode, onApplySingle, onDeleteSingle, onClearSalesLogs }) {
-    const [activeTab, setActiveTab] = useState('QUERY'); // 'QUERY' or 'REACTION'
+export function StatsPanel({ trends, salesLogs = [], onApplyAll, onUpdateLogCode, onApplySingle, onDeleteSingle, onClearSalesLogs, products = [], onSelectProduct, trendWindow = 3, setTrendWindow }) {
+    const [activeTab, setActiveTab] = useState('QUERY'); // 'QUERY' | 'REACTION'
+    const [topSort, setTopSort] = useState('REV'); // 'QTY' | 'REV' — 기본: 매출 기준 정렬
 
     const downloadCSV = () => {
         if (salesLogs.length === 0) return;
@@ -35,58 +36,149 @@ export function StatsPanel({ trends, salesLogs = [], onApplyAll, onUpdateLogCode
         return true;
     });
 
+    // 판매 TOP 5 정렬 (판매수량 or 매출액)
+    const topProducts = [...products]
+        .filter(p => (p.sales || 0) > 0)
+        .sort((a, b) => topSort === 'QTY'
+            ? (b.sales || 0) - (a.sales || 0)
+            : ((b.sales || 0) * (b.price || 0)) - ((a.sales || 0) * (a.price || 0)))
+        .slice(0, 5);
+
+    const topTrends = filteredTrends.slice(0, 5);
+
+    const rankColor = (idx) =>
+        idx === 0 ? 'text-yellow-400' : idx === 1 ? 'text-gray-300' : idx === 2 ? 'text-amber-600' : 'text-gray-600';
+
+    const deltaMark = (delta) => {
+        if (delta === 'up' || delta === 'new') return <span className="text-green-400 text-[9px] font-black">▲</span>;
+        if (delta === 'down') return <span className="text-gray-600 text-[9px]">▼</span>;
+        return <span className="text-gray-700 text-[9px]">·</span>;
+    };
+
     return (
         <div className="col-span-2 border-r border-gray-800 bg-gray-900 flex flex-col overflow-hidden" style={{ height: '100%' }}>
 
-            {/* ── 상단: Live Hot Keywords (ProductTable과 같은 높이 영역) ── */}
+            {/* ── 상단 영역: 판매 TOP5 / 핫키워드 TOP5 2단 분할 (ProductTable과 같은 높이) ── */}
             <div className="flex flex-col overflow-hidden min-h-0" style={{ height: 'calc(100% - 21.5rem)' }}>
 
-                {/* 헤더 */}
-                <div className="h-12 border-b border-gray-800 flex items-center px-3 bg-gray-800/40 flex-none">
-                    <Activity size={14} className="text-red-400 mr-2" />
-                    <h2 className="font-bold text-xs text-gray-200">Live Hot Keywords</h2>
-                </div>
-
-                {/* 탭 */}
-                <div className="h-8 flex gap-1 px-3 border-b border-gray-800 bg-gray-900 items-center flex-none">
-                    <button
-                        onClick={() => setActiveTab('QUERY')}
-                        className={`text-[9px] px-2 py-0.5 rounded ${activeTab === 'QUERY' ? 'bg-blue-900/50 text-blue-200' : 'text-gray-500 hover:text-gray-300'}`}
-                    >
-                        Inquiries
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('REACTION')}
-                        className={`text-[9px] px-2 py-0.5 rounded ${activeTab === 'REACTION' ? 'bg-red-900/50 text-red-200' : 'text-gray-500 hover:text-gray-300'}`}
-                    >
-                        Reactions
-                    </button>
-                </div>
-
-                {/* 키워드 목록 — 남은 공간 전체 스크롤 */}
-                <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-0">
-                    {filteredTrends.length > 0 ? (
-                        filteredTrends.map((t, idx) => (
-                            <div key={idx} className="group">
-                                <div className="flex justify-between items-end mb-0.5">
-                                    <span className={`text-[11px] font-medium leading-tight truncate px-0.5 ${idx < 3 ? 'text-white' : 'text-gray-400'}`}>
-                                        {idx + 1}. {t.term}
-                                    </span>
-                                    <span className="text-[9px] text-gray-500">{t.frequency}</span>
-                                </div>
-                                <div className="h-1.5 w-full bg-gray-800 rounded-full overflow-hidden">
-                                    <div
-                                        style={{ width: `${Math.min((t.frequency / (filteredTrends[0]?.frequency || 1)) * 100, 100)}%` }}
-                                        className={`h-full rounded-full ${idx < 3 ? 'bg-red-500' : 'bg-blue-600'} opacity-80`}
-                                    />
-                                </div>
-                            </div>
-                        ))
-                    ) : (
-                        <div className="h-full flex items-center justify-center text-gray-600 text-[10px]">
-                            No Data
+                {/* 상단 절반: 판매 TOP 5 */}
+                <div className="flex flex-col overflow-hidden min-h-0 flex-1 border-b border-gray-800">
+                    <div className="h-9 flex items-center px-3 bg-gray-800/40 flex-none border-b border-gray-800">
+                        <Trophy size={13} className="text-yellow-500 mr-2" />
+                        <h2 className="font-bold text-xs text-gray-200">판매 TOP 5</h2>
+                        <div className="ml-auto flex items-center gap-0.5">
+                            <button
+                                onClick={() => setTopSort('QTY')}
+                                className={`text-[8px] px-1.5 py-0.5 rounded ${topSort === 'QTY' ? 'bg-yellow-700 text-white font-bold' : 'bg-gray-800 text-gray-500 hover:text-gray-300'}`}
+                            >
+                                수량
+                            </button>
+                            <button
+                                onClick={() => setTopSort('REV')}
+                                className={`text-[8px] px-1.5 py-0.5 rounded ${topSort === 'REV' ? 'bg-yellow-700 text-white font-bold' : 'bg-gray-800 text-gray-500 hover:text-gray-300'}`}
+                            >
+                                매출
+                            </button>
                         </div>
-                    )}
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-2 space-y-1 min-h-0">
+                        {topProducts.length > 0 ? (
+                            topProducts.map((p, idx) => (
+                                <div
+                                    key={p.id || p.code || idx}
+                                    onClick={() => onSelectProduct && onSelectProduct(p)}
+                                    className="flex items-center gap-1.5 py-1 px-1 rounded cursor-pointer hover:bg-gray-800/60 border-b border-gray-800/50"
+                                    title="탭하면 해당 제품 선택 (프롬프터 연동)"
+                                >
+                                    <span className={`text-[11px] font-mono font-black w-4 text-center flex-none ${rankColor(idx)}`}>
+                                        {idx + 1}
+                                    </span>
+                                    {p.code && (
+                                        <span className="text-[8px] font-mono text-blue-300 bg-blue-900/40 px-1 rounded flex-none">
+                                            {p.code}
+                                        </span>
+                                    )}
+                                    <span className={`text-[10px] truncate flex-1 ${idx < 3 ? 'text-white font-bold' : 'text-gray-400'}`}>
+                                        {p.name}
+                                    </span>
+                                    <span className="text-[10px] font-mono text-red-400 font-bold flex-none">
+                                        {p.sales || 0}
+                                    </span>
+                                    <span className="text-[9px] font-mono text-yellow-400 flex-none text-right">
+                                        ₩{((p.sales || 0) * (p.price || 0)).toLocaleString()}
+                                    </span>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="h-full flex items-center justify-center text-gray-600 text-[10px]">
+                                판매 기록 없음
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* 하단 절반: 핫키워드 TOP 5 */}
+                <div className="flex flex-col overflow-hidden min-h-0 flex-1">
+                    <div className="h-9 flex items-center px-3 bg-gray-800/40 flex-none border-b border-gray-800">
+                        <Activity size={13} className="text-red-400 mr-2" />
+                        <h2 className="font-bold text-xs text-gray-200">핫키워드 TOP 5</h2>
+                    </div>
+
+                    {/* 탭 + 시간창 */}
+                    <div className="h-7 flex gap-1 px-3 border-b border-gray-800 bg-gray-900 items-center flex-none">
+                        <button
+                            onClick={() => setActiveTab('QUERY')}
+                            className={`text-[9px] px-2 py-0.5 rounded ${activeTab === 'QUERY' ? 'bg-blue-900/50 text-blue-200' : 'text-gray-500 hover:text-gray-300'}`}
+                        >
+                            Inquiries
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('REACTION')}
+                            className={`text-[9px] px-2 py-0.5 rounded ${activeTab === 'REACTION' ? 'bg-red-900/50 text-red-200' : 'text-gray-500 hover:text-gray-300'}`}
+                        >
+                            Reactions
+                        </button>
+                        <div className="ml-auto flex items-center gap-0.5">
+                            {[1, 3, 5].map(min => (
+                                <button
+                                    key={min}
+                                    onClick={() => setTrendWindow && setTrendWindow(min)}
+                                    className={`text-[8px] px-1.5 py-0.5 rounded ${trendWindow === min ? 'bg-blue-700 text-white font-bold' : 'bg-gray-800 text-gray-500 hover:text-gray-300'}`}
+                                    title={`최근 ${min}분 집계`}
+                                >
+                                    {min}분
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-0">
+                        {topTrends.length > 0 ? (
+                            topTrends.map((t, idx) => (
+                                <div key={idx} className="group">
+                                    <div className="flex justify-between items-end mb-0.5 gap-1">
+                                        <span className={`text-[11px] font-medium leading-tight truncate px-0.5 ${idx < 3 ? 'text-white' : 'text-gray-400'}`}>
+                                            {idx + 1}. {t.term}
+                                        </span>
+                                        <span className="flex items-center gap-1 flex-none">
+                                            <span className="text-[9px] text-gray-500">{t.frequency}</span>
+                                            {deltaMark(t.delta)}
+                                        </span>
+                                    </div>
+                                    <div className="h-1.5 w-full bg-gray-800 rounded-full overflow-hidden">
+                                        <div
+                                            style={{ width: `${Math.min((t.frequency / (topTrends[0]?.frequency || 1)) * 100, 100)}%` }}
+                                            className={`h-full rounded-full ${idx < 3 ? 'bg-red-500' : 'bg-blue-600'} opacity-80`}
+                                        />
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="h-full flex items-center justify-center text-gray-600 text-[10px]">
+                                No Data
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 

@@ -74,7 +74,13 @@ const PrompterOverlay = ({ prompterMsg, onClose, onUpdateProduct, unmappedCodes 
                                         e.currentTarget.blur();
                                     }
                                 }}
-                                className="bg-yellow-600/30 text-yellow-400 px-4 py-2 rounded-2xl font-mono text-5xl md:text-7xl font-bold border-2 border-yellow-500/50 shadow-[0_0_30px_rgba(234,179,8,0.4)] w-auto max-w-[300px] min-w-[150px] text-center outline-none focus:border-yellow-400 transition-all"
+                                style={{
+                                    fontSize: localCode.length <= 4 ? '4.5rem'
+                                        : localCode.length <= 7 ? '3.5rem'
+                                        : localCode.length <= 10 ? '2.6rem'
+                                        : '1.9rem'
+                                }}
+                                className="bg-yellow-600/30 text-yellow-400 px-4 py-2 rounded-2xl font-mono font-bold border-2 border-yellow-500/50 shadow-[0_0_30px_rgba(234,179,8,0.4)] w-auto max-w-[300px] min-w-[150px] text-center outline-none focus:border-yellow-400 transition-all"
                             />
                             <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-sm text-yellow-500 opacity-0 group-hover:opacity-100 transition-opacity font-bold bg-black/80 px-2 py-1 rounded pointer-events-none">Edit Code</span>
                         </div>

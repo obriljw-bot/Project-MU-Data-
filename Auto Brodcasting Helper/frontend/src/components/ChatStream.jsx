@@ -29,6 +29,13 @@ function getIntentBorder(intent) {
     }
 }
 
+function fmtCountdown(sec) {
+    if (!sec || sec <= 0) return '';
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+}
+
 export function ChatStream({
     messages,
     chatInput,
@@ -38,7 +45,12 @@ export function ChatStream({
     onToggleAnnouncer,
     announcerCountdown,
     nextMessage = "Next Auto Message...",
-    onOpenAnnouncerSettings
+    onOpenAnnouncerSettings,
+    quickSends = [],
+    quickCountdowns = [],
+    onQuickSend,
+    chatViewMode = 'NORMAL',
+    onToggleChatViewMode
 }) {
     const chatEndRef = useRef(null);
 
@@ -61,7 +73,19 @@ export function ChatStream({
             <div className="h-12 border-b border-gray-800 flex items-center px-4 bg-gray-800/40 flex-none">
                 <MessageSquare size={16} className="text-blue-400 mr-2" />
                 <h2 className="font-bold text-sm text-gray-200">Real-time Live Chat</h2>
-                <span className="ml-auto text-[10px] bg-blue-900/30 text-blue-400 px-2 py-0.5 rounded-full">Stream</span>
+                <div className="ml-auto flex items-center gap-1.5">
+                    <button
+                        onClick={onToggleChatViewMode}
+                        title="순수채팅모드: 시스템/선착순 안내 메시지 제외하고 사람 채팅만 표시"
+                        className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition-colors
+                            ${chatViewMode === 'PURE'
+                                ? 'bg-green-900/40 text-green-300 border-green-700/60'
+                                : 'bg-gray-800 text-gray-500 border-gray-700 hover:text-gray-300'}`}
+                    >
+                        {chatViewMode === 'PURE' ? '👤 순수채팅' : '📋 일반모드'}
+                    </button>
+                    <span className="text-[10px] bg-blue-900/30 text-blue-400 px-2 py-0.5 rounded-full">Stream</span>
+                </div>
             </div>
 
             {/* Chat List (Fills Middle) */}
@@ -138,6 +162,31 @@ export function ChatStream({
                         </button>
                     </div>
                 </div>
+
+                {/* Quick Send Buttons */}
+                {quickSends.length > 0 && (
+                    <div className="border-t border-gray-800 bg-gray-800/50 px-3 py-1.5 flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[8px] text-cyan-500 font-black uppercase tracking-wider flex-none">Quick</span>
+                        {quickSends.map((q, i) => {
+                            const hasText = !!q.text?.trim();
+                            const cd = q.timerOn && hasText ? fmtCountdown(quickCountdowns[i]) : '';
+                            return (
+                                <button
+                                    key={i}
+                                    onClick={() => onQuickSend && onQuickSend(i)}
+                                    title={hasText ? q.text : '설정에서 문구를 입력하세요'}
+                                    className={`text-[10px] font-bold px-2.5 py-1 rounded-full border transition-all active:scale-95 flex items-center gap-1
+                                        ${hasText
+                                            ? 'bg-cyan-900/40 text-cyan-200 border-cyan-700/60 hover:bg-cyan-800/50'
+                                            : 'bg-gray-800 text-gray-600 border-gray-700 hover:text-gray-400'}`}
+                                >
+                                    ⚡ {q.label || `#${i + 1}`}
+                                    {cd && <span className="font-mono text-[8px] text-cyan-400/80">({cd})</span>}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
 
                 {/* Manual Input Area */}
                 <div className="h-32 border-t border-gray-800 bg-gray-800/30 p-3">
