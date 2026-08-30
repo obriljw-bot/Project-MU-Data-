@@ -11,7 +11,7 @@ const app = express();
 const PORT = 3001;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // Configure Multer for file upload
 const upload = multer({ dest: 'uploads/' });
@@ -32,72 +32,175 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', message: 'Server is running' });
 });
 
-// API: Upload Excel
-app.post('/api/upload', upload.single('file'), (req, res) => {
-    if (!req.file) {
-        return res.status(400).json({ error: 'No file uploaded' });
-    }
+// ======================================================================
+// API: [1단계] 파일 파싱 + 바코드 유효성 검사 (DB 저장 없음)
+// ======================================================================
+app.post('/api/parse', upload.single('file'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: '파일이 없습니다.' });
+
     try {
         const workbook = xlsx.readFile(req.file.path);
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
         const data = xlsx.utils.sheet_to_json(sheet, { header: 'A' });
+        fs.unlinkSync(req.file.path);
 
-        db.serialize(() => {
-            db.run('BEGIN TRANSACTION');
-
-            const stmtBrand = db.prepare('INSERT OR IGNORE INTO brands (name) VALUES (?)');
-            const stmtStore = db.prepare('INSERT OR IGNORE INTO stores (name) VALUES (?)');
-            const stmtProduct = db.prepare(`INSERT OR IGNORE INTO products (barcode, name, category, brand_id)
-                VALUES (?, ?, ?, (SELECT id FROM brands WHERE name = ?))`);
-            const stmtSale = db.prepare(`INSERT INTO sales (sale_date, store_id, product_id, quantity, amount, customer_count, inventory)
-                VALUES (?, (SELECT id FROM stores WHERE name = ?), (SELECT id FROM products WHERE barcode = ?), ?, ?, ?, ?)`);
-
-            const brands = new Set();
-            const stores = new Set();
-            const products = new Map(); // barcode -> {name, category, brand}
-
-            data.forEach(row => {
-                if (!row.A || row.A === '날짜') return;
-                if (row.B) stores.add(row.B);
-                if (row.C) brands.add(row.C);
-                if (row.D) products.set(row.D, { name: row.E, category: row.K, brand: row.C });
-            });
-
-            brands.forEach(b => stmtBrand.run(b));
-            stores.forEach(s => stmtStore.run(s));
-            products.forEach((val, barcode) => {
-                stmtProduct.run(barcode, val.name, val.category, val.brand);
-            });
-
-            data.forEach(row => {
-                if (!row.A || row.A === '날짜') return;
-                stmtSale.run(
-                    parseExcelDate(row.A),
-                    row.B,
-                    row.D,
-                    row.F || 0,
-                    row.G || 0,
-                    row.H || 0,
-                    row.J || 0
-                );
-            });
-
-            stmtBrand.finalize();
-            stmtStore.finalize();
-            stmtProduct.finalize();
-            stmtSale.finalize();
-
-            db.run('COMMIT');
+        // 1차 패스: 바코드 중복 카운팅
+        const barcodeCount = {};
+        data.forEach(row => {
+            if (!row.A || row.A === '날짜') return;
+            const bc = row.D ? String(row.D).trim() : '';
+            if (bc) barcodeCount[bc] = (barcodeCount[bc] || 0) + 1;
         });
 
-        fs.unlinkSync(req.file.path);
-        res.json({ message: 'File processed successfully', count: data.length });
-    } catch (error) {
-        console.error('Upload error:', error);
+        // 바코드 상태 분류: '정상' | '없음' | '형식오류' | '중복'
+        function classifyBarcode(val) {
+            if (!val) return '없음';
+            const s = String(val).trim();
+            if (!s || s === 'ㅡ' || s === '-') return '없음';
+            if (/[\n\r]/.test(s)) return '형식오류';
+            if (/[가-힣]/.test(s)) return '형식오류';
+            if (/\d\s+\d/.test(s)) return '형식오류';
+            if (/^\d+(-\d+)+$/.test(s)) return '형식오류';
+            if (barcodeCount[s] > 1) return '중복';
+            return '정상';
+        }
+
+        const rows = [];
+        let rowId = 0;
+
+        data.forEach(row => {
+            if (!row.A || row.A === '날짜') return;
+            const barcode = row.D ? String(row.D).trim() : '';
+            const barcodeStatus = classifyBarcode(row.D);
+
+            // 기본 포함 여부: 정상/중복은 true, 없음/형식오류는 false
+            const include = barcodeStatus === '정상' || barcodeStatus === '중복';
+
+            rows.push({
+                id: rowId++,
+                date: parseExcelDate(row.A),
+                store: String(row.B || '').trim(),
+                brand: String(row.C || '').trim(),
+                barcode,
+                productName: String(row.E || '').trim(),
+                quantity: Number(row.F || 0),
+                amount: Number(row.G || 0),
+                customerCount: Number(row.H || 0),
+                inventory: Number(row.J || 0),
+                category: String(row.K || '').trim(),
+                barcodeStatus,
+                include,
+            });
+        });
+
+        const stats = {
+            total: rows.length,
+            ok:    rows.filter(r => r.barcodeStatus === '정상').length,
+            dup:   rows.filter(r => r.barcodeStatus === '중복').length,
+            none:  rows.filter(r => r.barcodeStatus === '없음').length,
+            error: rows.filter(r => r.barcodeStatus === '형식오류').length,
+        };
+
+        res.json({ rows, stats });
+
+    } catch (err) {
+        console.error('[/api/parse] Error:', err);
         if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-        res.status(500).json({ error: 'Failed to process file' });
+        res.status(500).json({ error: '파일 파싱 중 오류가 발생했습니다: ' + err.message });
     }
+});
+
+// ======================================================================
+// API: [2단계] 확정된 rows를 DB에 저장 (JSON body 수신)
+// ======================================================================
+app.post('/api/upload', (req, res) => {
+    const rows = req.body && req.body.rows;
+    if (!rows || !Array.isArray(rows)) {
+        return res.status(400).json({ error: '데이터가 없습니다.' });
+    }
+
+    const includedRows = rows.filter(r => r.include !== false);
+    if (includedRows.length === 0) {
+        return res.status(400).json({ error: '등록할 행이 없습니다.' });
+    }
+
+    db.serialize(() => {
+        db.run('BEGIN TRANSACTION');
+
+        const stmtBrand   = db.prepare('INSERT OR IGNORE INTO brands (name) VALUES (?)');
+        const stmtStore   = db.prepare('INSERT OR IGNORE INTO stores (name) VALUES (?)');
+        const stmtProduct = db.prepare(`
+            INSERT OR IGNORE INTO products (barcode, name, category, brand_id)
+            VALUES (?, ?, ?, (SELECT id FROM brands WHERE name = ?))`);
+        const stmtSale    = db.prepare(`
+            INSERT INTO sales (sale_date, store_id, product_id, quantity, amount, customer_count, inventory)
+            VALUES (
+                ?,
+                (SELECT id FROM stores WHERE name = ?),
+                (SELECT id FROM products WHERE barcode = ?),
+                ?, ?, ?, ?
+            )`);
+
+        const brands   = new Set();
+        const stores   = new Set();
+        const products = new Map(); // barcode → {name, category, brand}
+
+        includedRows.forEach(row => {
+            if (row.brand)   brands.add(row.brand);
+            if (row.store)   stores.add(row.store);
+            if (row.barcode) products.set(row.barcode, {
+                name:     row.productName || '',
+                category: row.category   || '',
+                brand:    row.brand      || '',
+            });
+        });
+
+        brands.forEach(b => stmtBrand.run(b));
+        stores.forEach(s => stmtStore.run(s));
+        products.forEach((val, barcode) => {
+            stmtProduct.run(barcode, val.name, val.category, val.brand);
+        });
+
+        includedRows.forEach(row => {
+            stmtSale.run(
+                row.date,
+                row.store,
+                row.barcode || null,
+                row.quantity      || 0,
+                row.amount        || 0,
+                row.customerCount || 0,
+                row.inventory     || 0
+            );
+        });
+
+        stmtBrand.finalize();
+        stmtStore.finalize();
+        stmtProduct.finalize();
+        stmtSale.finalize();
+
+        db.run('COMMIT', (err) => {
+            if (err) {
+                console.error('[/api/upload] COMMIT 실패:', err);
+                db.run('ROLLBACK');
+                return res.status(500).json({ error: 'DB 저장 실패: ' + err.message });
+            }
+
+            const skipped = rows.filter(r => r.include === false);
+            res.json({
+                registeredCount: includedRows.length,
+                skippedCount:    skipped.length,
+                skipped: skipped.map(r => ({
+                    brand:         r.brand,
+                    productName:   r.productName,
+                    barcode:       r.barcode,
+                    barcodeStatus: r.barcodeStatus,
+                    quantity:      r.quantity,
+                    amount:        r.amount,
+                })),
+            });
+        });
+    });
 });
 
 // API: Dashboard Data (with Filters)

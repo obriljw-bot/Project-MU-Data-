@@ -58,6 +58,9 @@ Thumbs.db
 ~$*.xlsx
 *.tmp
 
+# ── Downloaded binaries (자동 다운로드되므로 git 불필요) ──
+cloudflared-windows-amd64.exe
+
 # ── 매출/판매 데이터 (민감정보, 로컬 전용) ─────
 *.xlsx
 CHATING LIST.txt
