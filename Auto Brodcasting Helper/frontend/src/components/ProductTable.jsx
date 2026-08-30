@@ -2,7 +2,7 @@ import React from 'react';
 import { Package, Edit, Trash, Plus, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
-export function ProductTable({ products, onEdit, onDelete, onAdd, onUpdateProduct, selectedProduct, onSelectProduct }) {
+export function ProductTable({ products, onEdit, onDelete, onAdd, onUpdateProduct, selectedProduct, onSelectProduct, suggestedProductId }) {
 
     const handleExport = () => {
         try {
@@ -74,12 +74,13 @@ export function ProductTable({ products, onEdit, onDelete, onAdd, onUpdateProduc
                             const isSelected = selectedProduct?.id
                                 ? selectedProduct.id === p.id
                                 : selectedProduct?.code === p.code;
+                            const isSuggested = suggestedProductId && p.id === suggestedProductId;
                             return (
                                 <tr
                                     id={`product-row-${p.id || p.code}`}
                                     key={p.id || p.code}
                                     onClick={() => onSelectProduct(p)}
-                                    className={`border-b border-gray-800 transition-colors cursor-pointer ${isSelected ? 'bg-yellow-900/30 border-yellow-700/50' : 'hover:bg-gray-800/50'}`}
+                                    className={`border-b transition-colors cursor-pointer ${isSuggested ? 'bg-purple-900/30 border-purple-500' : isSelected ? 'bg-yellow-900/30 border-yellow-700/50' : 'border-gray-800 hover:bg-gray-800/50'}`}
                                 >
                                     <td className="p-2 font-mono text-gray-500">
                                         <input type="text" value={p.barcode || ''} onClick={(e) => e.stopPropagation()}
@@ -92,7 +93,14 @@ export function ProductTable({ products, onEdit, onDelete, onAdd, onUpdateProduc
                                             className="w-full bg-transparent border-b border-transparent focus:border-yellow-500 outline-none text-sm" />
                                     </td>
                                     <td className="p-2 text-gray-400">{p.brand}</td>
-                                    <td className={`p-2 font-medium ${isSelected ? 'text-yellow-100 font-bold' : 'text-white'}`}>{p.name}</td>
+                                    <td className={`p-2 font-medium ${isSelected ? 'text-yellow-100 font-bold' : 'text-white'}`}>
+                                        {p.name}
+                                        {isSuggested && (
+                                            <span className="ml-2 text-[10px] font-bold text-purple-300 bg-purple-900/60 border border-purple-500 px-2 py-0.5 rounded-full whitespace-nowrap">
+                                                셀러 추천
+                                            </span>
+                                        )}
+                                    </td>
                                     <td className="p-2 text-right text-gray-400">{p.price?.toLocaleString()}</td>
                                     <td className="p-2 text-right">
                                         <input type="number" value={p.stock} onClick={(e) => e.stopPropagation()}

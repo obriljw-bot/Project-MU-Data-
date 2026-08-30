@@ -6,7 +6,6 @@ import { GripBot } from './services/grip-bot.js';
 import { config } from './config.js';
 import readline from 'readline';
 import { WebSocketServer } from 'ws';
-import { exec } from 'child_process';
 import { createServer } from 'http';
 import os from 'os';
 import localtunnel from 'localtunnel';
@@ -38,6 +37,12 @@ const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
 });
+
+// [버그 수정] readline이 stdin을 점유하면 Windows에서 Ctrl+C(SIGINT)가 씹혀서
+// 터미널을 꺼도 node 프로세스가 좀비로 남아 포트(8081/3001)를 계속 붙잡는 문제가
+// 반복 발생 — Ctrl+C 시 확실히 종료되도록 명시적으로 처리.
+rl.on('SIGINT', () => process.exit(0));
+process.on('SIGINT', () => process.exit(0));
 
 function askQuestion(query) {
     return new Promise(resolve => rl.question(query, resolve));
@@ -153,6 +158,47 @@ async function main() {
                 // ── 인증되지 않은 외부 기기 차단 ────────────────────────────
                 if (!ws.isDashboard && !ws.isAuthenticated) {
                     ws.send(JSON.stringify({ type: 'AUTH_REQUIRED' }));
+                    return;
+                }
+
+                // ── 리모콘 연결은 제품 추천 전송 외 어떤 명령도 처리하지 않음 ──
+                if (ws.isRemotePicker && parsed.type !== 'SUGGEST_PRODUCT') {
+                    return;
+                }
+
+                // 제품 선택 리모콘: PIN 인증 완료 직후 스스로 역할을 선언 →
+                // 이 연결은 이후 SUGGEST_PRODUCT 외 모든 명령을 무시하도록 제한됨
+                if (parsed.type === 'REMOTE_PICKER_READY' && !ws.isDashboard && ws.isAuthenticated) {
+                    ws.isRemotePicker = true;
+                    console.log("🎯 Remote Picker Connected (scoped)");
+                    // 대시보드에게 알려서, 지금 갖고 있는 제품 목록을 즉시 다시 보내도록 함
+                    // (제품 목록 자체가 바뀌지 않으면 새로 접속한 리모콘은 초기 목록을 못 받는 문제 방지)
+                    broadcastToDashboard({ type: 'REMOTE_PICKER_JOINED' });
+                    return;
+                }
+
+                if (parsed.type === 'SUGGEST_PRODUCT') {
+                    broadcastToDashboard({ type: 'SUGGEST_PRODUCT', data: { id: parsed.id, name: parsed.name } });
+                    return;
+                }
+
+                // [버그 수정] TOP_STATS_SYNC(판매TOP5/핫키워드TOP5)에 대한 중계 핸들러가
+                // 아예 없어서 대시보드가 계산한 결과가 프롬프터로 전달되지 않고 있었음.
+                if (parsed.type === 'TOP_STATS_SYNC') {
+                    broadcast(wss, parsed);
+                    return;
+                }
+
+                // [버그 수정] SYNC_GLOBAL_STATS(TV프롬프터 판매합계금액/수량)도 동일하게
+                // 중계 핸들러가 없어서 TV프롬프터 하단 통계가 계속 0으로만 표시되고 있었음.
+                if (parsed.type === 'SYNC_GLOBAL_STATS') {
+                    broadcast(wss, parsed);
+                    return;
+                }
+
+                // 제품 선택 리모콘용 — 대시보드의 전체 제품 목록을 리모콘 화면에 동기화
+                if (parsed.type === 'PRODUCTS_FULL_SYNC' && ws.isDashboard) {
+                    broadcast(wss, parsed);
                     return;
                 }
 
@@ -482,12 +528,9 @@ async function main() {
     // await bot.launch(); -> (X) 빈 창 띄우지 않기
 
     console.log("🕒 Waiting for URL input from Dashboard...");
-    console.log("⏳ Opening Dashboard automatically...");
 
-    // 5. 프론트엔드 대시보드 자동 실행 (Windows)
-    exec('start http://localhost:5173', (err) => {
-        if (err) console.error("Failed to open dashboard:", err);
-    });
+    // [중복 제거] 런처(2_그립봇_자동실행.bat)가 프론트엔드 기동 후 3초 뒤
+    // 별도로 대시보드를 열어주므로, 여기서 또 열면 창이 2개 뜸 — 제거.
 
     // 6. 글로벌 터널링 (localtunnel) — Vite 포트 5173 외부 노출
     async function startTunnel() {

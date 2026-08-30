@@ -23,6 +23,9 @@ const STORED = loadAnnouncerStore();
 // 프롬프터(태블릿/TV)·핫키워드 집계와 동일한 패턴 — 메인 대시보드 채팅 표시에도 동일하게 적용
 const AGGREGATE_PARTICIPATION_REGEX = /(님\s*외\s*\d+\s*명이\s*저요[!~\s]*$)|(님\s*외\s*\d+\s*명이\s*추첨에\s*참여했습니다\.?\s*$)|(^추첨에\s*참여했습니다\.?\s*$)/;
 
+// 직원 계정 채팅 — 핫키워드 집계에서만 제외 (일반 시청자 발화가 아니라 랭킹을 왜곡함)
+const STAFF_NICKNAMES = new Set(['마녀옷장_AI', '마녀맨']);
+
 function App() {
   const [socket, setSocket] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -132,6 +135,9 @@ function App() {
   const [localIp, setLocalIp] = useState('');
   const [tunnelUrl, setTunnelUrl] = useState('');
   const [adminPin, setAdminPin] = useState('');
+  // 제품 선택 리모콘 — 셀러가 추천한 제품 코드(30초 후 자동 해제). 접속은 고정 링크 + PIN.
+  const [suggestedProductId, setSuggestedProductId] = useState(null);
+  const suggestedTimeoutRef = React.useRef(null);
 
   // =============================================
   // Ref 동기화
@@ -147,13 +153,22 @@ function App() {
   useEffect(() => { minGapRef.current = minGapSec; }, [minGapSec]);
   useEffect(() => { productChangeAnnounceRef.current = productChangeAnnounce; }, [productChangeAnnounce]);
 
+  // [버그 수정] 사이클 진행 중 토글을 끄면 남은 카운트가 안 지워져서, 다시 켜기 전까지
+  // 매 간격마다 빈 발송 시도가 큐를 계속 차지해 다른 자동공지가 밀리던 문제 — 끄는 즉시 리셋.
+  useEffect(() => {
+    if (!productChangeAnnounce.enabled) {
+      productChangeStateRef.current = { remaining: 0, nextFireAt: 0 };
+    }
+  }, [productChangeAnnounce.enabled]);
+
   // 제품 변경 감지 → 활성화돼있으면 N회 발송 사이클 시작 (기존 사이클은 새 제품으로 리셋)
+  // 첫 메시지는 감지 즉시가 아니라 3초 후 발송 (셀러가 제품을 들어보일 시간 확보)
   useEffect(() => {
     const key = selectedProduct ? (selectedProduct.id || selectedProduct.code || selectedProduct.name) : null;
     if (key === lastProductKeyRef.current) return; // 실제로 바뀐 게 아니면 무시(리렌더 등)
     lastProductKeyRef.current = key;
     if (key && productChangeAnnounceRef.current.enabled && productChangeAnnounceRef.current.text?.trim()) {
-      productChangeStateRef.current = { remaining: productChangeAnnounceRef.current.repeatCount || 2, nextFireAt: Date.now() };
+      productChangeStateRef.current = { remaining: productChangeAnnounceRef.current.repeatCount || 2, nextFireAt: Date.now() + 3000 };
     } else {
       productChangeStateRef.current = { remaining: 0, nextFireAt: 0 };
     }
@@ -252,7 +267,9 @@ function App() {
       '해주세요','해줘요','있나요','하나요','제발','주세요',
     ]);
 
-    const QUERY_PATTERN = /[?？]|어디|얼마|있나|없나|어때|뭐예|무엇|언제|어떻게|구매|살수|파나요|살게|사고|성분|효과|사이즈|용량|배송|재고|후기|사용법|추천|비교/;
+    // [실측 반영] "사고"는 REACTION_PATTERN의 "사고싶"(구매욕구 반응)을 가로채는 문제가 확인돼 제외.
+    // 실측 21건 검토 결과 "사고" 단독으로 진짜 구매 문의로 쓰인 사례는 없었음.
+    const QUERY_PATTERN = /[?？]|어디|얼마|있나|없나|어때|뭐예|무엇|언제|어떻게|구매|살수|파나요|살게|성분|효과|사이즈|용량|배송|재고|후기|사용법|추천|비교/;
     const REACTION_PATTERN = /저요|최고|짱|신기|이쁘|예쁘|좋아|좋네|좋겠|갖고싶|사고싶|👍|❤|💕|😍|🔥|대박|헐|놀라|완전좋/;
 
     // [실측 검증] 실제 방송 로그 1727건 분석 결과, 조사가 붙은 상태로 토큰화되어
@@ -289,6 +306,7 @@ function App() {
       const freqMap = new Map(); // key -> Map(닉네임 -> 등장횟수)
       msgs.forEach(msg => {
         if (!msg.message || msg.intent === 'BOT_REPLY' || msg.nickname === 'SYSTEM') return;
+        if (msg.nickname && STAFF_NICKNAMES.has(msg.nickname)) return;
         if (AGGREGATE_PARTICIPATION.test(msg.message.trim())) return;
         const isQuery = QUERY_PATTERN.test(msg.message);
         const isParticipation = !isQuery && (msg.intent === 'BUY' || REACTION_PATTERN.test(msg.message));
@@ -325,14 +343,28 @@ function App() {
     const curMap = computeFreq(currentMsgs);
     const prevMap = computeFreq(prevMsgs);
 
+    // [가중치] 제품코드/제품명/브랜드가 언급된 키워드는 실제 구매신호이므로 ×1.8 가중
+    // ("ㅋㅋ" 같은 반응 키워드는 그대로 두되, 재미요소로 랭킹엔 남음 — 사용자 확인)
+    const PRODUCT_MATCH_BOOST = 1.8;
+    const currentProducts = productsRef.current || [];
+    const isProductMatch = (term) => currentProducts.some(p =>
+      (p.code && p.code.toLowerCase() === term.toLowerCase()) ||
+      (p.name && p.name.includes(term)) ||
+      (p.brand && p.brand.trim() && p.brand.includes(term))
+    );
+
     const result = Array.from(curMap.entries())
       .map(([key, personMap]) => {
         const sep = key.lastIndexOf('::');
-        const frequency = sumCapped(personMap); // 1인당 최대 KEYWORD_REPEAT_CAP회까지만 인정
+        const term = key.slice(0, sep);
+        const baseFreq = sumCapped(personMap); // 1인당 최대 KEYWORD_REPEAT_CAP회까지만 인정
+        const matched = isProductMatch(term);
+        const frequency = matched ? Math.round(baseFreq * PRODUCT_MATCH_BOOST) : baseFreq;
         const prevPersonMap = prevMap.get(key);
-        const prevFreq = prevPersonMap ? sumCapped(prevPersonMap) : 0;
+        const prevBaseFreq = prevPersonMap ? sumCapped(prevPersonMap) : 0;
+        const prevFreq = matched ? Math.round(prevBaseFreq * PRODUCT_MATCH_BOOST) : prevBaseFreq;
         const delta = prevFreq === 0 ? 'new' : frequency > prevFreq ? 'up' : frequency < prevFreq ? 'down' : 'same';
-        return { term: key.slice(0, sep), frequency, category: key.slice(sep + 2), delta };
+        return { term, frequency, category: key.slice(sep + 2), delta, isProductMatch: matched };
       })
       .sort((a, b) => b.frequency - a.frequency)
       .slice(0, 30);
@@ -647,6 +679,34 @@ function App() {
       case 'TUNNEL_READY':
         if (payload.data?.tunnelUrl) setTunnelUrl(payload.data.tunnelUrl);
         break;
+
+      // ── 제품 선택 리모콘 ────────────────────────
+      case 'REMOTE_PICKER_JOINED':
+        // 새 리모콘 접속 시 지금 제품 목록을 즉시 재전송 (products 자체는 안 바뀌었을 수 있음)
+        if (socketRef.current?.readyState === 1) {
+          socketRef.current.send(JSON.stringify({
+            type: 'PRODUCTS_FULL_SYNC',
+            data: {
+              // CODE는 비어있을 수 있어 여러 제품이 같은 값(빈 문자열)을 가질 수 있음 —
+              // 항상 고유한 내부 id를 식별자로 사용 (id는 제품 생성 시 항상 자동 부여됨)
+              products: productsRef.current.map(p => ({ id: p.id, code: p.code, name: p.name, brand: p.brand || '', price: p.price || 0 }))
+            }
+          }));
+        }
+        break;
+      case 'SUGGEST_PRODUCT': {
+        const productId = payload.data?.id;
+        if (!productId) break;
+        setSuggestedProductId(productId);
+        const target = productsRef.current.find(p => p.id === productId);
+        if (target) {
+          const el = document.getElementById(`product-row-${target.id || target.code}`);
+          el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        if (suggestedTimeoutRef.current) clearTimeout(suggestedTimeoutRef.current);
+        suggestedTimeoutRef.current = setTimeout(() => setSuggestedProductId(null), 30000);
+        break;
+      }
 
       // ── 연결 유지 (Heartbeat) ──────────────────
       case 'PING':
@@ -1000,6 +1060,12 @@ function App() {
     socket.send(JSON.stringify({ type: 'SAVE_VIDEO_WINDOW' }));
   };
 
+  // 프롬프터창(TV 모드)의 현재 크기/위치를 저장 — 다음 실행부터 자동 복원
+  const handleSavePrompterWindow = () => {
+    if (!socket) return;
+    socket.send(JSON.stringify({ type: 'SAVE_PROMPTER_WINDOW' }));
+  };
+
   const sendChatMessage = (e) => {
     e.preventDefault();
     if (!chatInput.trim() || !socket) return;
@@ -1061,6 +1127,18 @@ function App() {
       }));
     }
   }, [products, trends]);
+
+  // 제품 선택 리모콘: 전체 제품 목록(판매 여부 무관) 동기화
+  useEffect(() => {
+    if (socketRef.current?.readyState === 1) {
+      socketRef.current.send(JSON.stringify({
+        type: 'PRODUCTS_FULL_SYNC',
+        data: {
+          products: products.map(p => ({ id: p.id, code: p.code, name: p.name, brand: p.brand || '', price: p.price || 0 }))
+        }
+      }));
+    }
+  }, [products]);
 
   // 프롬프터: 상품 선택 시 실시간 동기화
   useEffect(() => {
@@ -1463,6 +1541,7 @@ function App() {
               onEdit={() => setIsProductModalOpen(true)}
               onDelete={(code) => setProducts(p => p.filter(x => x.code !== code))}
               onUpdateProduct={handleUpdateProduct}
+              suggestedProductId={suggestedProductId}
             />
           </div>
 
@@ -1528,6 +1607,7 @@ function App() {
             setTargetUrl={setTargetUrl}
             handleUrlUpdate={handleUrlUpdate}
             onSaveVideoWindow={handleSaveVideoWindow}
+            onSavePrompterWindow={handleSavePrompterWindow}
             prompterInput={prompterInput}
             setPrompterInput={setPrompterInput}
             onSendCue={handleSendCue}

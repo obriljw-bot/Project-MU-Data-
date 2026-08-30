@@ -109,15 +109,9 @@
                     }
 
                     if (payload.type === 'AUTH_REQUIRED') {
-                        // [자동 재인증] 화면 꺼짐/네트워크 전환으로 WS가 재연결될 때마다
-                        // 서버는 새 연결로 인식해 매번 PIN을 요구함. 이전에 성공한 PIN이
-                        // 저장돼 있으면 사람 개입 없이 자동으로 재전송해 재입력을 없앰.
-                        const savedPin = localStorage.getItem('grip_scanner_pin');
-                        if (savedPin) {
-                            ws.send(JSON.stringify({ type: 'AUTH', pin: savedPin }));
-                        } else {
-                            authGate.style.display = 'flex';
-                        }
+                        // [단순화] 자동 재인증 제거 — PIN은 서버 재시작마다 바뀌므로
+                        // 저장된 옛날 값을 조용히 재시도하다 실패하는 대신, 매번 명확하게 입력받음
+                        authGate.style.display = 'flex';
                     }
                     if (payload.type === 'AUTH_SUCCESS') {
                         // 인증 완료 시 스캐너 메인 화면 진입
@@ -126,8 +120,6 @@
                         statusEl.innerText = "✨ 보안 접속 완료!\n'스캐너 켜기'를 누르고 바코드를 읽어주세요.";
                     }
                     if (payload.type === 'AUTH_FAILED') {
-                        // 저장된 PIN이 서버 재시작 등으로 더 이상 유효하지 않은 경우 → 삭제 후 수동 재입력 요구
-                        localStorage.removeItem('grip_scanner_pin');
                         authGate.style.display = 'flex';
                         alert("❌ 보안 인증 실패: 비밀번호를 다시 확인하세요.");
                         pinInput.value = '';
@@ -172,7 +164,6 @@
                 return;
             }
             if (ws && ws.readyState === WebSocket.OPEN) {
-                localStorage.setItem('grip_scanner_pin', pin); // 재연결 시 자동 재인증용 저장
                 ws.send(JSON.stringify({ type: 'AUTH', pin: pin }));
             } else {
                 alert('서버와 연결되어 있지 않습니다. 잠시 후 다시 시도하세요.');

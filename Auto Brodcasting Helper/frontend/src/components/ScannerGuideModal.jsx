@@ -1,12 +1,16 @@
 import React from 'react';
 import { QrCode, X, Copy, AlertCircle, CheckCircle } from 'lucide-react';
 
-export function ScannerGuideModal({ localIp, tunnelUrl, adminPin, onClose }) {
-    // 터널망(TunnelUrl)이 존재할 경우 전 세계망 주소 우선, 터널이 꺼져있을 경우엔 로컬망(공유기) 주소로 폴백.
-    const baseUrl = tunnelUrl ? tunnelUrl : `http://${localIp || 'IP_LOADING'}:5173`;
-    
+// 방송 구동 시 항상 함께 켜두는 고정 Cloudflare 터널 도메인 (loca.lt 경고 화면 없이 바로 접속됨)
+const FIXED_TUNNEL_URL = 'https://grip.makemerobot.cloud';
+
+export function ScannerGuideModal({ localIp, adminPin, onClose }) {
+    const baseUrl = FIXED_TUNNEL_URL;
+
     const scannerUrl = `${baseUrl}/scanner.html`;
     const prompterUrl = `${baseUrl}/prompter.html`;
+    // 제품 선택 리모콘: 고정 링크 + 위 보안코드(PIN)로 인증 (scanner.html과 동일 방식)
+    const remotePickerUrl = `${baseUrl}/remote-picker.html`;
     // TV 모니터 모드는 같은 PC(HDMI 연결)에서만 열리는 용도라 터널 주소가 아니라
     // 항상 로컬 IP 기준으로 안내 — 외부망 접속 시엔 PIN 자동인증이 동작하지 않음.
     const tvPrompterUrl = `http://${localIp || 'IP_LOADING'}:5173/prompter.html?tv=1`;
@@ -112,15 +116,33 @@ export function ScannerGuideModal({ localIp, tunnelUrl, adminPin, onClose }) {
                                 {copied === 'prompter' ? <CheckCircle size={18} /> : <Copy size={18} />}
                             </button>
                         </div>
-                        {tunnelUrl ? (
-                           <p className="text-xs text-green-400 mt-2 font-bold bg-green-900/40 p-2 rounded-md inline-block">
-                             ✅ 현재 무료 글로벌 터널링 가동 됨! LTE 망에서 그대로 복사/클릭하여 접속 가능합니다.
-                           </p>
-                        ) : (
-                           <p className="text-xs text-orange-400 mt-2">
-                             ⚠️ 글로벌 외부망(터널링) 생성이 지연 중입니다. 현재는 [동일 와이파이 안에서만] 접속 가능합니다.
-                           </p>
-                        )}
+                        <p className="text-xs text-green-400 mt-2 font-bold bg-green-900/40 p-2 rounded-md inline-block">
+                          ✅ 고정 주소({FIXED_TUNNEL_URL}) 사용 중 — 경고 화면 없이 LTE 망에서 바로 접속 가능합니다.
+                        </p>
+                    </div>
+
+                    {/* Product Remote Picker Address */}
+                    <div className="bg-gray-800 rounded-xl p-3 border border-gray-700">
+                        <div className="text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wide">
+                            🎯 제품 선택 리모콘 접속 주소 (셀러용)
+                        </div>
+                        <div className="flex gap-2 items-stretch">
+                            <input
+                                type="text"
+                                readOnly
+                                value={remotePickerUrl}
+                                className="flex-1 bg-gray-900 text-sm font-mono text-purple-300 rounded-lg px-3 py-2 border border-gray-700 focus:outline-none"
+                            />
+                            <button
+                                onClick={() => handleCopy(remotePickerUrl, 'remotePicker')}
+                                className={`px-4 flex items-center justify-center rounded-lg font-bold text-sm transition-colors ${copied === 'remotePicker' ? 'bg-green-600 text-white' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}
+                            >
+                                {copied === 'remotePicker' ? <CheckCircle size={18} /> : <Copy size={18} />}
+                            </button>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-2">
+                            고정 링크 — 위 "1회용 보안 코드(PIN)"로 인증 후 접속합니다. 다른 외부 접속과 동일한 방식입니다.
+                        </p>
                     </div>
 
                     {/* TV/Monitor Prompter Address */}

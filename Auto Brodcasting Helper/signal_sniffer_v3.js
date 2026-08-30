@@ -18,23 +18,26 @@ let isSocketConnected = false;
 let ws;
 let hasExtractedWinners = false;
 let pageRef = null;
+let prompterPageRef = null;
 let lastWinnerCount = 0; // GLOBAL STATE (Shared between Chat & DOM Polling)
 
-// ── 영상 창 크기/위치 저장·복원 ────────────────────────────────────
+// ── 창 크기/위치 저장·복원 (영상 창 / 프롬프터 창 공용) ────────────────
 // 사용자가 수동으로 딱 맞게 배치한 창 크기를 저장해두고, 다음 실행 시
-// 그 값 그대로 자동 복원. 대시보드의 "창크기 저장" 버튼 → SAVE_VIDEO_WINDOW
-// 신호를 받으면 CDP로 현재 실제 창 좌표를 읽어 파일에 기록.
+// 그 값 그대로 자동 복원. 대시보드의 저장 버튼 → SAVE_VIDEO_WINDOW /
+// SAVE_PROMPTER_WINDOW 신호를 받으면 CDP로 현재 실제 창 좌표를 읽어 파일에 기록.
 const VIDEO_WINDOW_CONFIG_PATH = path.join(__dirname, 'video_window_config.json');
+const PROMPTER_WINDOW_CONFIG_PATH = path.join(__dirname, 'prompter_window_config.json');
+const PROMPTER_URL = 'http://localhost:5173/prompter.html?tv=1';
 
-function loadSavedWindowBounds() {
-    try { return JSON.parse(fs.readFileSync(VIDEO_WINDOW_CONFIG_PATH, 'utf8')); } catch { return null; }
+function loadSavedBounds(configPath) {
+    try { return JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch { return null; }
 }
 
-async function saveCurrentWindowBounds(page) {
+async function saveCurrentWindowBounds(page, configPath) {
     const client = await page.context().newCDPSession(page);
     const { windowId } = await client.send('Browser.getWindowForTarget');
     const { bounds } = await client.send('Browser.getWindowBounds', { windowId });
-    fs.writeFileSync(VIDEO_WINDOW_CONFIG_PATH, JSON.stringify(bounds, null, 2));
+    fs.writeFileSync(configPath, JSON.stringify(bounds, null, 2));
     return bounds;
 }
 
@@ -77,11 +80,25 @@ function connectToDashboard() {
             if (msg.type === 'SAVE_VIDEO_WINDOW') {
                 if (pageRef) {
                     try {
-                        const bounds = await saveCurrentWindowBounds(pageRef);
+                        const bounds = await saveCurrentWindowBounds(pageRef, VIDEO_WINDOW_CONFIG_PATH);
                         sendBotMessage(`📐 영상창 크기 저장됨: ${bounds.width}x${bounds.height} @ (${bounds.left},${bounds.top}) — 다음 실행부터 자동 적용`);
                     } catch (e) {
                         sendBotMessage(`❌ 영상창 크기 저장 실패: ${e.message}`);
                     }
+                }
+            }
+
+            // 프롬프터 창 크기/위치 저장 (대시보드 버튼 클릭 시)
+            if (msg.type === 'SAVE_PROMPTER_WINDOW') {
+                if (prompterPageRef) {
+                    try {
+                        const bounds = await saveCurrentWindowBounds(prompterPageRef, PROMPTER_WINDOW_CONFIG_PATH);
+                        sendBotMessage(`📐 프롬프터창 크기 저장됨: ${bounds.width}x${bounds.height} @ (${bounds.left},${bounds.top}) — 다음 실행부터 자동 적용`);
+                    } catch (e) {
+                        sendBotMessage(`❌ 프롬프터창 크기 저장 실패: ${e.message}`);
+                    }
+                } else {
+                    sendBotMessage('❌ 프롬프터창이 아직 열려있지 않습니다.');
                 }
             }
 
@@ -324,8 +341,9 @@ connectToDashboard();
 
     // ── 영상 창: 저장된 크기/위치가 있으면 복원, 없으면 기본 창 ──────────────
     // 사용자가 대시보드의 "창크기 저장" 버튼으로 저장해둔 값이 있으면 그대로 적용.
-    const savedBounds = loadSavedWindowBounds();
-    const launchArgs = [];
+    const savedBounds = loadSavedBounds(VIDEO_WINDOW_CONFIG_PATH);
+    // --app 모드: 탭바/주소창 없이 순수 창모드로 띄움 (전체화면 아님, 창 위치/겹침 배치 그대로 유지됨)
+    const launchArgs = ['--app=https://www.grip.show/'];
     if (savedBounds) {
         launchArgs.push(`--window-position=${savedBounds.left},${savedBounds.top}`);
         launchArgs.push(`--window-size=${savedBounds.width},${savedBounds.height}`);
@@ -339,6 +357,30 @@ connectToDashboard();
     });
     const page = context.pages()[0] || await context.newPage();
     pageRef = page;
+
+    // ── 프롬프터 창: 저장된 크기/위치가 있으면 복원, 없으면 기본 창 ──────────
+    // 영상 창과 별개의 독립 --app 창으로 함께 자동 실행됨.
+    (async () => {
+        try {
+            const promptterSavedBounds = loadSavedBounds(PROMPTER_WINDOW_CONFIG_PATH);
+            const prompterLaunchArgs = [`--app=${PROMPTER_URL}`];
+            if (promptterSavedBounds) {
+                prompterLaunchArgs.push(`--window-position=${promptterSavedBounds.left},${promptterSavedBounds.top}`);
+                prompterLaunchArgs.push(`--window-size=${promptterSavedBounds.width},${promptterSavedBounds.height}`);
+                console.log(`📐 저장된 프롬프터창 크기 복원: ${promptterSavedBounds.width}x${promptterSavedBounds.height} @ (${promptterSavedBounds.left},${promptterSavedBounds.top})`);
+            }
+            const prompterUserDataDir = path.join(__dirname, '.pw-prompter-profile');
+            const prompterContext = await chromium.launchPersistentContext(prompterUserDataDir, {
+                headless: false,
+                viewport: null,
+                args: prompterLaunchArgs,
+            });
+            prompterPageRef = prompterContext.pages()[0] || await prompterContext.newPage();
+            console.log('✅ 프롬프터 창 실행 완료');
+        } catch (e) {
+            console.warn('[프롬프터 창 실행] 실패:', e.message);
+        }
+    })();
 
     // 초기 실행 시 기본으로 그립 홈으로 이동 (이후 대시보드에서 실제 방송 URL로 UPDATE_URL 전송 시 전환)
     try {

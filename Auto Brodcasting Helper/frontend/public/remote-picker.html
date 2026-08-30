@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>🎯 제품 선택 리모콘</title>
+    <style>
+        body { margin: 0; padding: 0; background: #0f172a; color: white; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+        .header { background: #1e293b; padding: 16px; text-align: center; font-weight: 900; font-size: 1.2rem; border-bottom: 3px solid #a855f7; box-shadow: 0 4px 15px rgba(0,0,0,0.4); flex: none; }
+        #searchBox { margin: 12px 16px 0; padding: 14px 16px; font-size: 1.1rem; border-radius: 14px; border: 2px solid #334155; background: #1e293b; color: white; outline: none; }
+        #searchBox:focus { border-color: #a855f7; }
+        #list { flex: 1; overflow-y: auto; padding: 12px 16px 100px; display: flex; flex-direction: column; gap: 10px; }
+        .card { background: #1e293b; border: 2px solid #334155; border-radius: 16px; padding: 16px 18px; cursor: pointer; user-select: none; transition: background 0.15s, border-color 0.15s, transform 0.1s; }
+        .card:active { transform: scale(0.98); background: #334155; }
+        .card.selected { border-color: #a855f7; background: rgba(168,85,247,0.15); }
+        .card .brand { font-size: 0.85rem; color: #94a3b8; font-weight: bold; margin-bottom: 4px; }
+        .card .name { font-size: 1.25rem; font-weight: 900; color: white; line-height: 1.3; }
+        .card .price { font-size: 1rem; color: #facc15; font-weight: bold; margin-top: 6px; font-family: monospace; }
+        .empty { text-align: center; color: #64748b; font-size: 1.1rem; margin-top: 60px; }
+        #feedback {
+            position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 50;
+            background: #a855f7; color: white; font-weight: 900; text-align: center;
+            padding: 16px; border-radius: 16px; box-shadow: 0 10px 30px rgba(168,85,247,0.4);
+            transform: translateY(120%); transition: transform 0.25s ease-out;
+        }
+        #feedback.show { transform: translateY(0); }
+
+        /* Security Gate Overlay — scanner.html/prompter.html과 동일한 고정 보안코드(PIN) 방식 */
+        #authGate {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 23, 42, 0.98); z-index: 9999;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 20px;
+        }
+        #authGate h1 { color: #a855f7; margin-bottom: 10px; font-size: 1.8rem; }
+        #authGate p { color: #94a3b8; font-size: 1rem; margin-bottom: 30px; line-height: 1.5; }
+        #pinInput { font-size: 4rem; width: 200px; text-align: center; padding: 10px; border-radius: 12px; border: 2px solid #334155; background: #1e293b; color: white; outline: none; letter-spacing: 5px; font-family: monospace; }
+        #pinInput:focus { border-color: #a855f7; }
+        #pinBtn { margin-top: 30px; padding: 20px 50px; font-size: 1.5rem; background: #a855f7; font-weight: 900; color: white; border: none; border-radius: 12px; box-shadow: 0 4px 15px rgba(168,85,247,0.4); cursor: pointer; }
+        #pinBtn:active { transform: scale(0.95); }
+    </style>
+</head>
+<body>
+    <div class="header">🎯 제품 선택 리모콘</div>
+    <input type="text" id="searchBox" placeholder="제품명, 브랜드, 코드로 검색" />
+    <div id="list"></div>
+    <div id="feedback"></div>
+
+    <div id="authGate">
+        <h1>🔒 보안 인증</h1>
+        <p>방송 담당자 화면에 표시된<br><b>일회성 보안코드 4자리</b>를 입력하세요.</p>
+        <input type="number" id="pinInput" placeholder="0000" maxlength="4" />
+        <button id="pinBtn">인증 후 입장</button>
+    </div>
+
+    <script>
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws-signal`;
+
+        const listEl = document.getElementById('list');
+        const searchBox = document.getElementById('searchBox');
+        const feedbackEl = document.getElementById('feedback');
+        const authGate = document.getElementById('authGate');
+        const pinInput = document.getElementById('pinInput');
+        const pinBtn = document.getElementById('pinBtn');
+
+        let allProducts = [];
+        let selectedId = null;
+        let ws;
+
+        function showFeedback(text) {
+            feedbackEl.textContent = text;
+            feedbackEl.classList.add('show');
+            setTimeout(() => feedbackEl.classList.remove('show'), 2200);
+        }
+
+        function render() {
+            const q = searchBox.value.trim().toLowerCase();
+            const filtered = !q ? allProducts : allProducts.filter(p =>
+                (p.name || '').toLowerCase().includes(q) ||
+                (p.brand || '').toLowerCase().includes(q) ||
+                (p.code || '').toLowerCase().includes(q)
+            );
+            if (filtered.length === 0) {
+                listEl.innerHTML = '<div class="empty">검색 결과가 없습니다.</div>';
+                return;
+            }
+            listEl.innerHTML = filtered.map(p => `
+                <div class="card ${p.id === selectedId ? 'selected' : ''}" data-id="${p.id}">
+                    <div class="brand">${p.brand || '브랜드 미등록'}</div>
+                    <div class="name">${p.name || ''}</div>
+                    <div class="price">${(p.price || 0).toLocaleString()}원</div>
+                </div>`).join('');
+            listEl.querySelectorAll('.card').forEach(card => {
+                card.addEventListener('click', () => {
+                    const id = card.dataset.id;
+                    // CODE는 비어있는 제품이 많아 구분값으로 못 씀 — 항상 고유한 id로 매칭
+                    const product = allProducts.find(p => p.id === id);
+                    if (!product) return;
+                    selectedId = id;
+                    render();
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'SUGGEST_PRODUCT', id: product.id, name: product.name }));
+                    }
+                    showFeedback(`선택됨: ${product.name}`);
+                });
+            });
+        }
+
+        searchBox.addEventListener('input', render);
+
+        function connectWS() {
+            ws = new WebSocket(wsUrl);
+            ws.onopen = () => console.log('✅ WS Server Connected');
+
+            ws.onmessage = (event) => {
+                try {
+                    const payload = JSON.parse(event.data);
+
+                    if (payload.type === 'PING') {
+                        ws.send(JSON.stringify({ type: 'PONG' }));
+                        return;
+                    }
+                    if (payload.type === 'AUTH_REQUIRED') {
+                        // [단순화] 자동 재인증 제거 — PIN은 서버 재시작마다 바뀌므로
+                        // 저장된 옛날 값을 조용히 재시도하다 실패하는 대신, 매번 명확하게 입력받음
+                        authGate.style.display = 'flex';
+                    }
+                    if (payload.type === 'AUTH_SUCCESS') {
+                        authGate.style.display = 'none';
+                        ws.send(JSON.stringify({ type: 'REMOTE_PICKER_READY' }));
+                    }
+                    if (payload.type === 'AUTH_FAILED') {
+                        authGate.style.display = 'flex';
+                        alert('❌ 보안 인증 실패: 코드를 다시 확인하세요.');
+                    }
+                    if (payload.type === 'PRODUCTS_FULL_SYNC') {
+                        allProducts = payload.data?.products || [];
+                        render();
+                    }
+                } catch (e) {
+                    console.error('WS message parse error', e);
+                }
+            };
+
+            ws.onclose = () => {
+                setTimeout(connectWS, 3000);
+            };
+        }
+
+        pinBtn.addEventListener('click', () => {
+            const pin = pinInput.value.trim();
+            if (pin.length < 4) {
+                alert('4자리 숫자를 입력하세요.');
+                return;
+            }
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'AUTH', pin }));
+            }
+        });
+
+        connectWS();
+    </script>
+</body>
+</html>

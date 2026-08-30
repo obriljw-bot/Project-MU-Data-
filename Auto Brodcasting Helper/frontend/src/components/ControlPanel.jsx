@@ -4,7 +4,7 @@ import { Settings, Activity, FileSpreadsheet, Search, X } from 'lucide-react';
 export function ControlPanel({
     autoReplyEnabled, toggleAutoReply,
     isSalesCountingEnabled, toggleSalesCounting,
-    targetUrl, setTargetUrl, handleUrlUpdate, onSaveVideoWindow,
+    targetUrl, setTargetUrl, handleUrlUpdate, onSaveVideoWindow, onSavePrompterWindow,
     onResetAnalysis, onDownloadReport,
     prompterInput, setPrompterInput, onSendCue,
     recentSales,
@@ -119,12 +119,21 @@ export function ControlPanel({
                                 <input type="text" value={targetUrl} onChange={(e) => setTargetUrl(e.target.value)}
                                     className="flex-1 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-white focus:border-blue-500 outline-none" />
                                 <button onClick={handleUrlUpdate} className="bg-gray-700 hover:bg-gray-600 text-white text-xs px-3 py-1 rounded">Set</button>
+                            </div>
+                            <div className="flex flex-wrap gap-1">
                                 <button
                                     onClick={onSaveVideoWindow}
                                     title="지금 배치한 영상창 크기·위치를 저장 — 다음 실행부터 자동 복원"
                                     className="bg-blue-900/40 hover:bg-blue-900/60 text-blue-300 border border-blue-900/50 text-xs px-3 py-1 rounded whitespace-nowrap"
                                 >
-                                    📐 창크기 저장
+                                    📐 영상창 저장
+                                </button>
+                                <button
+                                    onClick={onSavePrompterWindow}
+                                    title="지금 배치한 프롬프터창 크기·위치를 저장 — 다음 실행부터 자동 복원"
+                                    className="bg-purple-900/40 hover:bg-purple-900/60 text-purple-300 border border-purple-900/50 text-xs px-3 py-1 rounded whitespace-nowrap"
+                                >
+                                    🖥 프롬프터창 저장
                                 </button>
                             </div>
                         </div>
