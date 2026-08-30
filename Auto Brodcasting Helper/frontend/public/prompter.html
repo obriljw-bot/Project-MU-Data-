@@ -106,17 +106,14 @@
                 <div class="system-msg">서버 데이터를 연결 중입니다...</div>
             </div>
             <!-- GLOBAL STATS (BOTTOM FIXED) -->
-            <div style="background: rgba(17, 24, 39, 1); border-top: 2px solid #334155; padding: 25px 40px; display: flex; justify-content: space-between; align-items: center; z-index: 10;">
-                <div style="color: #94a3b8; font-size: 2rem; font-weight: bold; letter-spacing: 2px;">전체 방송 누적 통계</div>
-                <div style="display: flex; gap: 30px;">
-                    <div class="stat-badge" style="background: rgba(17, 24, 39, 0.9); border: 1px solid #facc15; box-shadow: 0 5px 15px rgba(250,204,21,0.2); border-radius: 12px; padding: 15px 30px;">
-                        <span class="label" style="color: #facc15;">TOTAL SOLD</span>
-                        <span class="value" id="topTotalSold" style="font-size: 2.8rem; color: #facc15; font-family: monospace;">0개</span>
-                    </div>
-                    <div class="stat-badge" style="background: rgba(17, 24, 39, 0.9); border: 1px solid #facc15; box-shadow: 0 5px 15px rgba(250,204,21,0.2); border-radius: 12px; padding: 15px 30px;">
-                        <span class="label" style="color: #facc15;">TOTAL REVENUE</span>
-                        <span class="value money" id="topTotalRevenue" style="font-size: 2.8rem; color: #facc15; font-family: monospace;">₩0</span>
-                    </div>
+            <div style="background: rgba(17, 24, 39, 1); border-top: 2px solid #334155; padding: 25px 40px; display: flex; justify-content: center; gap: 30px; align-items: center; z-index: 10;">
+                <div class="stat-badge" style="flex: 1; background: rgba(17, 24, 39, 0.9); border: 1px solid #facc15; box-shadow: 0 5px 15px rgba(250,204,21,0.2); border-radius: 12px; padding: 15px 30px;">
+                    <span class="label" style="color: #facc15;">TOTAL SOLD</span>
+                    <span class="value" id="topTotalSold" style="font-size: 2.8rem; color: #facc15; font-family: monospace;">0개</span>
+                </div>
+                <div class="stat-badge" style="flex: 1; background: rgba(17, 24, 39, 0.9); border: 1px solid #facc15; box-shadow: 0 5px 15px rgba(250,204,21,0.2); border-radius: 12px; padding: 15px 30px;">
+                    <span class="label" style="color: #facc15;">TOTAL REVENUE</span>
+                    <span class="value money" id="topTotalRevenue" style="font-size: 2.8rem; color: #facc15; font-family: monospace;">₩0</span>
                 </div>
             </div>
         </div>

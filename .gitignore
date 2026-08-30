@@ -56,3 +56,6 @@ Thumbs.db
 # ── Windows Excel / 임시 파일 ─────────────────
 ~$*.xlsx
 *.tmp
+
+# ── Downloaded binaries (자동 다운로드되므로 git 불필요) ──
+cloudflared-windows-amd64.exe
