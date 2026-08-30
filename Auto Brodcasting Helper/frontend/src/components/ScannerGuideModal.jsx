@@ -7,6 +7,9 @@ export function ScannerGuideModal({ localIp, tunnelUrl, adminPin, onClose }) {
     
     const scannerUrl = `${baseUrl}/scanner.html`;
     const prompterUrl = `${baseUrl}/prompter.html`;
+    // TV 모니터 모드는 같은 PC(HDMI 연결)에서만 열리는 용도라 터널 주소가 아니라
+    // 항상 로컬 IP 기준으로 안내 — 외부망 접속 시엔 PIN 자동인증이 동작하지 않음.
+    const tvPrompterUrl = `http://${localIp || 'IP_LOADING'}:5173/prompter.html?tv=1`;
     const [copied, setCopied] = React.useState('');
 
     const handleCopy = (text, type) => {
@@ -118,6 +121,30 @@ export function ScannerGuideModal({ localIp, tunnelUrl, adminPin, onClose }) {
                              ⚠️ 글로벌 외부망(터널링) 생성이 지연 중입니다. 현재는 [동일 와이파이 안에서만] 접속 가능합니다.
                            </p>
                         )}
+                    </div>
+
+                    {/* TV/Monitor Prompter Address */}
+                    <div className="bg-gray-800 rounded-xl p-3 border border-gray-700">
+                        <div className="text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wide">
+                            📺 TV/모니터 프롬프터 접속 주소 (로컬 전용)
+                        </div>
+                        <div className="flex gap-2 items-stretch">
+                            <input
+                                type="text"
+                                readOnly
+                                value={tvPrompterUrl}
+                                className="flex-1 bg-gray-900 text-sm font-mono text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none"
+                            />
+                            <button
+                                onClick={() => handleCopy(tvPrompterUrl, 'tvPrompter')}
+                                className={`px-4 flex items-center justify-center rounded-lg font-bold text-sm transition-colors ${copied === 'tvPrompter' ? 'bg-green-600 text-white' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}
+                            >
+                                {copied === 'tvPrompter' ? <CheckCircle size={18} /> : <Copy size={18} />}
+                            </button>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-2">
+                            HDMI로 연결된 40인치 모니터/TV 전용 — PIN 자동 인증되며(같은 PC에서만 동작), 탭 없이 상품정보+세로형 방송화면+채팅+통계가 동시에 표시됩니다.
+                        </p>
                     </div>
                 </div>
 

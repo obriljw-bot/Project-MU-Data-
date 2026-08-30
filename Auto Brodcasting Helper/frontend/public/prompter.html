@@ -50,7 +50,7 @@
         
         .cue-item { padding: 40px; border-radius: 20px; background: #111827; border: 2px solid #374151; box-shadow: 0 10px 30px rgba(0,0,0,0.5); opacity: 0; transform: translateY(20px); animation: slideUp 0.4s forwards; }
         @keyframes slideUp { to { opacity: 1; transform: translateY(0); } }
-        .cue-text { font-size: 3.5rem; font-weight: 900; color: #facc15; line-height: 1.4; word-break: keep-all; }
+        .cue-text { font-size: 3.5rem; font-weight: 900; color: #facc15; line-height: 1.4; word-break: keep-all; overflow-wrap: break-word; }
         
         .product-card { background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); border-color: #4f46e5; text-align: center; }
         .product-name { font-size: 3rem; font-weight: 900; color: white; margin-bottom: 20px; }
@@ -74,6 +74,60 @@
         .chat-msg { font-size: 1.5rem; color: white; line-height: 1.4; word-break: break-all; white-space: pre-wrap; }
 
         .system-msg { text-align: center; color: #6b7280; font-size: 2rem; font-weight: bold; margin-top: 50px; }
+
+        /* 채팅/TOP정보 탭 */
+        .chat-tabbar { display: flex; background: #0f172a; border-bottom: 2px solid #1e293b; flex: none; }
+        .chat-tab-btn { flex: 1; padding: 12px; font-size: 1.15rem; font-weight: bold; background: transparent; color: #64748b; border: none; border-bottom: 3px solid transparent; cursor: pointer; }
+        .chat-tab-btn.active { color: #60a5fa; border-bottom-color: #3b82f6; }
+
+        #topPanel { flex: 1; overflow-y: auto; padding: 20px; display: none; flex-direction: column; gap: 25px; }
+        .top-section-header { display: flex; align-items: center; gap: 10px; font-size: 1.2rem; font-weight: bold; text-transform: uppercase; color: #facc15; margin-bottom: 10px; }
+        .top-sort-toggle { margin-left: auto; display: flex; gap: 6px; }
+        .top-sort-btn { font-size: 0.9rem; font-weight: bold; padding: 5px 12px; border-radius: 14px; border: 1px solid #334155; background: #1e293b; color: #6b7280; cursor: pointer; }
+        .top-sort-btn.active { background: #a16207; color: #fff; border-color: #ca8a04; }
+
+        .top-row { display: flex; align-items: center; gap: 10px; background: #111827; border: 1px solid #1f2937; border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; }
+        .top-rank { font-size: 1.4rem; font-weight: 900; width: 26px; text-align: center; color: #6b7280; flex: none; }
+        .top-rank.r1 { color: #facc15; } .top-rank.r2 { color: #cbd5e1; } .top-rank.r3 { color: #d97706; }
+        .top-name { flex: 1; font-size: 1.2rem; font-weight: bold; color: #e5e7eb; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .top-qty { font-size: 1.2rem; font-weight: 900; color: #f87171; flex: none; }
+        .top-rev { font-size: 0.95rem; color: #facc15; flex: none; min-width: 90px; text-align: right; }
+        .kw-row { margin-bottom: 12px; }
+        .kw-top-line { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+        .kw-term { font-size: 1.15rem; font-weight: bold; color: #e5e7eb; }
+        .kw-freq { font-size: 0.95rem; color: #9ca3af; }
+        .kw-bar-bg { height: 8px; background: #1f2937; border-radius: 4px; overflow: hidden; }
+        .kw-bar-fill { height: 100%; background: #3b82f6; border-radius: 4px; }
+        .top-empty { text-align: center; color: #4b5563; font-size: 1rem; padding: 20px 0; }
+
+        /* ══════════════════════════════════════════════
+           TV/모니터 모드 (?tv=1) — 터치 불가 순수 디스플레이용
+           3분할: 상품정보+통계 / 판매TOP5+핫키워드TOP5 / 채팅(확장)
+           영상은 완전히 별도의 창 — 이 페이지 안에는 자리를 만들지 않음.
+           동일 URL, body.tv-mode 클래스로만 분기 (별도 파일 없음)
+           ══════════════════════════════════════════════ */
+        body.tv-mode .chat-tabbar,
+        body.tv-mode #chatModeRow,
+        body.tv-mode .full-screen-btn,
+        body.tv-mode #wakeLockBadge {
+            display: none !important;
+        }
+        body.tv-mode .left-pane { flex: 0 0 44%; }
+        /* chatContainer를 가로 배치로 바꿔 TOP5 컬럼 + 채팅 컬럼으로 분리.
+           DOM 순서는 chatList가 topPanel보다 먼저라 order로 시각 순서만 뒤집음
+           (topPanel = 가운데 구 영상자리, chatList = 오른쪽 확장) */
+        body.tv-mode #chatContainer { flex: 1; flex-direction: row; }
+        body.tv-mode #topPanel {
+            display: flex !important; flex: 0 0 44%; flex-direction: column;
+            border-right: 2px solid #1e293b; order: 1;
+        }
+        body.tv-mode #chatList { flex: 1; order: 2; }
+
+        /* TV모드 채팅: 폰트/메시지박스 기존 대비 20% 확대 */
+        body.tv-mode #chatList { padding: 14px; gap: 10px; }
+        body.tv-mode .chat-bubble { padding: 10px 14px; }
+        body.tv-mode .chat-nick { font-size: 0.96rem; margin-bottom: 2px; }
+        body.tv-mode .chat-msg { font-size: 1.14rem; line-height: 1.3; }
 
     </style>
 </head>
@@ -105,6 +159,7 @@
             <div id="cueContainer">
                 <div class="system-msg">서버 데이터를 연결 중입니다...</div>
             </div>
+
             <!-- GLOBAL STATS (BOTTOM FIXED) -->
             <div style="background: rgba(17, 24, 39, 1); border-top: 2px solid #334155; padding: 25px 40px; display: flex; justify-content: center; gap: 30px; align-items: center; z-index: 10;">
                 <div class="stat-badge" style="flex: 1; background: rgba(17, 24, 39, 0.9); border: 1px solid #facc15; box-shadow: 0 5px 15px rgba(250,204,21,0.2); border-radius: 12px; padding: 15px 30px;">
@@ -117,15 +172,49 @@
                 </div>
             </div>
         </div>
-        
-        <!-- RIGHT: CHAT -->
+
+        <!-- RIGHT: CHAT / TOP INFO -->
         <div id="chatContainer">
-            <div class="chat-header">💬 실시간 채팅</div>
+            <div class="chat-tabbar">
+                <button id="tabChatBtn" class="chat-tab-btn active">💬 실시간 채팅</button>
+                <button id="tabTopBtn" class="chat-tab-btn">🏆 TOP 정보</button>
+            </div>
+            <div class="chat-header" style="display:flex; align-items:center; justify-content:center; position:relative;" id="chatModeRow">
+                <button id="chatModeBtn" style="position:absolute; right:15px; font-size:0.9rem; font-weight:bold; padding:5px 14px; border-radius:20px; border:1px solid #334155; background:#1e293b; color:#6b7280; cursor:pointer;">📋 일반모드</button>
+            </div>
             <div id="chatList"></div>
+
+            <div id="topPanel">
+                <div>
+                    <div class="top-section-header">
+                        판매 TOP 5
+                        <div class="top-sort-toggle">
+                            <button id="topSortQtyBtn" class="top-sort-btn">수량</button>
+                            <button id="topSortRevBtn" class="top-sort-btn active">매출</button>
+                        </div>
+                    </div>
+                    <div id="topProductsList"></div>
+                </div>
+                <div>
+                    <div class="top-section-header">
+                        핫키워드 TOP 5
+                        <div class="top-sort-toggle">
+                            <button id="topKwQueryBtn" class="top-sort-btn active">문의</button>
+                            <button id="topKwReactionBtn" class="top-sort-btn">반응</button>
+                        </div>
+                    </div>
+                    <div id="topKeywordsList"></div>
+                </div>
+            </div>
         </div>
     </div>
 
     <script>
+        // TV/모니터 모드: 같은 URL에 ?tv=1 만 붙이면 터치 없는 순수 디스플레이용 레이아웃으로 전환
+        // (탭 전환 UI 숨김 + 채팅/TOP정보 동시 표시). 별도 파일 없이 CSS 분기로만 처리.
+        const isTvMode = new URLSearchParams(location.search).get('tv') === '1';
+        if (isTvMode) document.body.classList.add('tv-mode');
+
         const authGate = document.getElementById('authGate');
         const pinInput = document.getElementById('pinInput');
         const pinBtn = document.getElementById('pinBtn');
@@ -139,6 +228,25 @@
         let ws;
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws-signal`;
+
+        // TV모드 전용 자동 인증: 메인 대시보드가 PIN을 가져올 때 쓰는 것과 동일한
+        // 로컬 전용(127.0.0.1) 엔드포인트를 그대로 재사용 — 서버 보안 로직은 그대로 두고
+        // "같은 PC에서 열림"을 이용해 PIN 입력 화면만 건너뜀.
+        async function autoAuthForTv() {
+            try {
+                const res = await fetch('http://localhost:8081/admin/pin');
+                if (!res.ok) throw new Error('local only');
+                const data = await res.json();
+                if (data.pin) {
+                    ws.send(JSON.stringify({ type: 'AUTH', pin: data.pin }));
+                    return;
+                }
+                throw new Error('no pin');
+            } catch (e) {
+                // 로컬이 아니거나 실패 시 안전하게 수동 PIN 화면 노출
+                authGate.style.display = 'flex';
+            }
+        }
 
         function connectWS() {
             ws = new WebSocket(wsUrl);
@@ -154,13 +262,31 @@
                     }
 
                     if (payload.type === 'AUTH_REQUIRED') {
-                        authGate.style.display = 'flex';
+                        if (isTvMode) {
+                            // TV모드는 외부 접속이 아니라 같은 PC(HDMI로 연결된 모니터)에서만 열리므로
+                            // 매번 PIN을 물어보지 않고 로컬 전용 /admin/pin에서 직접 받아 자동 인증.
+                            // (이 엔드포인트는 서버가 127.0.0.1 요청에만 응답 — 외부 접속이면 실패해 안전하게 게이트 노출)
+                            autoAuthForTv();
+                            return;
+                        }
+                        // [자동 재인증] 태블릿 화면 꺼짐/네트워크 전환으로 WS가 재연결될 때마다
+                        // 서버는 새 연결로 인식해 매번 PIN을 요구함. 이전에 성공한 PIN이
+                        // 저장돼 있으면 사람 개입 없이 자동으로 재전송해 재입력을 없앰.
+                        const savedPin = localStorage.getItem('grip_prompter_pin');
+                        if (savedPin) {
+                            ws.send(JSON.stringify({ type: 'AUTH', pin: savedPin }));
+                        } else {
+                            authGate.style.display = 'flex';
+                        }
                     }
                     if (payload.type === 'AUTH_SUCCESS') {
                         authGate.style.display = 'none';
                         cueContainer.innerHTML = '<div class="system-msg">대기 중... 방송을 시작하세요.</div>';
                     }
                     if (payload.type === 'AUTH_FAILED') {
+                        // 저장된 PIN이 서버 재시작 등으로 더 이상 유효하지 않은 경우 → 삭제 후 수동 재입력 요구
+                        localStorage.removeItem('grip_prompter_pin');
+                        authGate.style.display = 'flex';
                         alert("❌ 보안 인증 실패: 비밀번호를 다시 확인하세요.");
                         pinInput.value = '';
                         pinInput.focus();
@@ -184,6 +310,12 @@
                         const count = payload.data?.count ?? 0;
                         renderChat({ nickname: '🤖 BOT', message: `📢 [판매종료] 당첨자 ${count}명 집계 완료!`, isSystem: true });
                     }
+                    // 판매 TOP5 / 핫키워드 TOP5 — 메인 대시보드가 계산한 결과를 그대로 수신해 표시
+                    if (payload.type === 'TOP_STATS_SYNC') {
+                        latestTopStats = payload.data || { topProducts: [], keywordsQuery: [], keywordsReaction: [] };
+                        renderTopProducts();
+                        renderTopKeywords();
+                    }
                 } catch (e) {}
             };
 
@@ -193,6 +325,124 @@
             };
         }
 
+        // 순수채팅모드: 시스템/선착순 안내/봇 메시지 제외하고 사람 채팅만 표시
+        const chatModeBtn = document.getElementById('chatModeBtn');
+        let chatViewMode = localStorage.getItem('prompter_chat_mode') || 'PURE';
+
+        function applyChatModeStyle() {
+            if (chatViewMode === 'PURE') {
+                chatModeBtn.textContent = '👤 순수채팅';
+                chatModeBtn.style.background = '#064e3b';
+                chatModeBtn.style.color = '#86efac';
+                chatModeBtn.style.borderColor = '#15803d';
+            } else {
+                chatModeBtn.textContent = '📋 일반모드';
+                chatModeBtn.style.background = '#1e293b';
+                chatModeBtn.style.color = '#6b7280';
+                chatModeBtn.style.borderColor = '#334155';
+            }
+        }
+        applyChatModeStyle();
+
+        chatModeBtn.addEventListener('click', () => {
+            chatViewMode = (chatViewMode === 'PURE') ? 'NORMAL' : 'PURE';
+            localStorage.setItem('prompter_chat_mode', chatViewMode);
+            applyChatModeStyle();
+        });
+
+        // ── 💬 채팅 / 🏆 TOP 정보 탭 전환 ──────────────────────────────
+        const tabChatBtn = document.getElementById('tabChatBtn');
+        const tabTopBtn = document.getElementById('tabTopBtn');
+        const chatModeRow = document.getElementById('chatModeRow');
+        const topPanel = document.getElementById('topPanel');
+
+        function switchChatTab(mode) {
+            const isChat = mode === 'CHAT';
+            tabChatBtn.classList.toggle('active', isChat);
+            tabTopBtn.classList.toggle('active', !isChat);
+            chatModeRow.style.display = isChat ? 'flex' : 'none';
+            chatList.style.display = isChat ? 'flex' : 'none';
+            topPanel.style.display = isChat ? 'none' : 'flex';
+        }
+        tabChatBtn.addEventListener('click', () => switchChatTab('CHAT'));
+        tabTopBtn.addEventListener('click', () => switchChatTab('TOP'));
+
+        // ── 🏆 TOP 정보: 판매 TOP5 / 핫키워드 TOP5 렌더링 ───────────────
+        // 집계 로직(STOPWORDS·조사처리 등)은 메인 대시보드에서만 계산되고,
+        // 여기서는 TOP_STATS_SYNC로 받은 결과를 정렬/표시만 함 (로직 중복 없음).
+        let latestTopStats = { topProducts: [], keywordsQuery: [], keywordsReaction: [] };
+        let topSortMode = 'REV';   // 'QTY' | 'REV' — 기본: 매출 기준 정렬
+        let topKwMode = 'QUERY';   // 'QUERY' | 'REACTION'
+
+        const topProductsList = document.getElementById('topProductsList');
+        const topKeywordsList = document.getElementById('topKeywordsList');
+        const topSortQtyBtn = document.getElementById('topSortQtyBtn');
+        const topSortRevBtn = document.getElementById('topSortRevBtn');
+        const topKwQueryBtn = document.getElementById('topKwQueryBtn');
+        const topKwReactionBtn = document.getElementById('topKwReactionBtn');
+
+        function rankClass(idx) {
+            return idx === 0 ? 'r1' : idx === 1 ? 'r2' : idx === 2 ? 'r3' : '';
+        }
+
+        function renderTopProducts() {
+            const sorted = [...latestTopStats.topProducts]
+                .sort((a, b) => topSortMode === 'QTY'
+                    ? (b.sales || 0) - (a.sales || 0)
+                    : ((b.sales || 0) * (b.price || 0)) - ((a.sales || 0) * (a.price || 0)))
+                .slice(0, 5);
+
+            if (sorted.length === 0) {
+                topProductsList.innerHTML = '<div class="top-empty">판매 기록 없음</div>';
+                return;
+            }
+            topProductsList.innerHTML = sorted.map((p, idx) => `
+                <div class="top-row">
+                    <span class="top-rank ${rankClass(idx)}">${idx + 1}</span>
+                    <span class="top-name">${p.name || ''}</span>
+                    <span class="top-qty">${(p.sales || 0).toLocaleString()}개</span>
+                    <span class="top-rev">₩${((p.sales || 0) * (p.price || 0)).toLocaleString()}</span>
+                </div>`).join('');
+        }
+
+        function renderTopKeywords() {
+            const list = (topKwMode === 'QUERY' ? latestTopStats.keywordsQuery : latestTopStats.keywordsReaction) || [];
+            if (list.length === 0) {
+                topKeywordsList.innerHTML = '<div class="top-empty">데이터 없음</div>';
+                return;
+            }
+            const maxFreq = list[0]?.frequency || 1;
+            topKeywordsList.innerHTML = list.map((t, idx) => `
+                <div class="kw-row">
+                    <div class="kw-top-line">
+                        <span class="kw-term">${idx + 1}. ${t.term}</span>
+                        <span class="kw-freq">${t.frequency}</span>
+                    </div>
+                    <div class="kw-bar-bg"><div class="kw-bar-fill" style="width:${Math.min((t.frequency / maxFreq) * 100, 100)}%"></div></div>
+                </div>`).join('');
+        }
+
+        topSortQtyBtn.addEventListener('click', () => {
+            topSortMode = 'QTY';
+            topSortQtyBtn.classList.add('active'); topSortRevBtn.classList.remove('active');
+            renderTopProducts();
+        });
+        topSortRevBtn.addEventListener('click', () => {
+            topSortMode = 'REV';
+            topSortRevBtn.classList.add('active'); topSortQtyBtn.classList.remove('active');
+            renderTopProducts();
+        });
+        topKwQueryBtn.addEventListener('click', () => {
+            topKwMode = 'QUERY';
+            topKwQueryBtn.classList.add('active'); topKwReactionBtn.classList.remove('active');
+            renderTopKeywords();
+        });
+        topKwReactionBtn.addEventListener('click', () => {
+            topKwMode = 'REACTION';
+            topKwReactionBtn.classList.add('active'); topKwQueryBtn.classList.remove('active');
+            renderTopKeywords();
+        });
+
         function updateGlobalStats(data) {
             topTotalSold.innerText = `${data.totalSold.toLocaleString()}개`;
             topTotalRevenue.innerText = `₩${data.totalRevenue.toLocaleString()}`;
@@ -201,6 +451,11 @@
         function renderChat(data) {
             if (!data || !data.message) return;
 
+            // ── 순수채팅모드: 시스템/선착순 안내/봇 메시지 제외 ──────────
+            // data.isSystem: 프롬프터 자체가 만든 봇 메시지(SNIFFER_LOG/BOT_REPLY/FCFS_WINNERS)
+            // data.nickname === 'SYSTEM': 그립 플랫폼이 보내는 선착순 안내 등 (스니퍼가 nick="SYSTEM"으로 전달)
+            if (chatViewMode === 'PURE' && (data.isSystem || data.nickname === 'SYSTEM')) return;
+
             // ── 선착순 참여 메시지 필터 ──────────────────────────────────
             // 시스템/봇 메시지는 항상 표시. 일반 시청자 채팅 중 단순 참여
             // 메시지("저요", "1개" 등)는 태블릿에서 필터링해 가독성을 높임.
@@ -208,7 +463,10 @@
                 const msg = data.message.trim();
                 // 순수 참여 메시지 패턴: "저요" / "저요!!!" / "ㅈㅛ" / "1" / "1개" / "2개" 등
                 const participationOnly = /^[ㄱ-ㅎㅏ-ㅣ가-힣a-zA-Z]*저요[!~\s]*$|^ㅈ[ㅛ요][!~\s]*$|^\d+\s*개?$|^저[!\s]*$/;
-                if (participationOnly.test(msg)) return;
+                // 플랫폼 집계형 참여 문구: "OOO님 외 N명이 저요!" / "OOO님 외 N명이 추첨에 참여했습니다." 등
+                // 닉네임에 공백이 섞인 경우("행복한 날들만 가득님" 등)도 잡히도록 님/외/명이 패턴으로 매칭
+                const aggregateParticipation = /(님\s*외\s*\d+\s*명이\s*저요[!~\s]*$)|(님\s*외\s*\d+\s*명이\s*추첨에\s*참여했습니다\.?\s*$)|(^추첨에\s*참여했습니다\.?\s*$)/;
+                if (participationOnly.test(msg) || aggregateParticipation.test(msg)) return;
             }
 
             const div = document.createElement('div');
@@ -253,9 +511,14 @@
                 div.style.boxShadow = 'none';
                 div.style.padding = '0';
 
+                // 제품명이 길면(공백 없는 한글 특성상 줄바꿈이 안 될 수 있어 overflow-wrap 필수)
+                // 폰트를 미리 줄여 최대 2줄 내로 들어오게 함 — 가격/재고 정보가 밀려 내려가는 것 방지
+                const nameLen = (p.name || '').length;
+                const nameFontSize = nameLen <= 12 ? 3.8 : nameLen <= 20 ? 3.0 : nameLen <= 30 ? 2.4 : 1.9;
+
                 div.innerHTML = `
-                    <div style="font-size: 3.8rem; font-weight: 900; color: white; text-align: left; margin-bottom: 20px; line-height: 1.3; word-break: keep-all;">
-                        <span style="color: #facc15; font-family: monospace; font-size: 2.8rem; margin-right: 14px; opacity: 0.9;">[${p.code || '-'}]</span>${p.name}
+                    <div style="font-size: ${nameFontSize}rem; font-weight: 900; color: white; text-align: left; margin-bottom: 20px; line-height: 1.3; word-break: keep-all; overflow-wrap: break-word; max-height: 2.6em; overflow: hidden;">
+                        <span style="color: #facc15; font-family: monospace; font-size: ${nameFontSize * 0.74}rem; margin-right: 14px; opacity: 0.9;">[${p.code || '-'}]</span>${p.name}
                     </div>
 
                     <div style="background: rgba(17, 24, 39, 0.9); border: 1px solid #4b5563; border-radius: 15px; padding: 20px 40px; margin-bottom: 20px; display: flex; justify-content: space-around; align-items: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
@@ -302,6 +565,7 @@
             const pin = pinInput.value.trim();
             if (pin.length < 4) { alert('4자리 숫자를 입력하세요.'); return; }
             if (ws && ws.readyState === WebSocket.OPEN) {
+                localStorage.setItem('grip_prompter_pin', pin); // 재연결 시 자동 재인증용 저장
                 ws.send(JSON.stringify({ type: 'AUTH', pin: pin }));
             }
         });
@@ -346,9 +610,15 @@
         };
 
         // 브라우저 자동재생 정책: 반드시 사용자 인터랙션 후 활성화
-        wakeLockBadge.textContent = '⏳ 화면유지 대기 (터치)';
-        document.addEventListener('touchstart', enableNoSleep, { once: true });
-        document.addEventListener('click', enableNoSleep, { once: true });
+        // TV모드는 터치/클릭이 들어올 일이 없으므로 즉시 시도 (실패해도 무해 — 모니터는
+        // 태블릿과 달리 OS 절전이 아니라 자체 전원설정을 따르는 경우가 대부분)
+        if (isTvMode) {
+            enableNoSleep();
+        } else {
+            wakeLockBadge.textContent = '⏳ 화면유지 대기 (터치)';
+            document.addEventListener('touchstart', enableNoSleep, { once: true });
+            document.addEventListener('click', enableNoSleep, { once: true });
+        }
 
         // 탭 복귀 시 재활성화
         document.addEventListener('visibilitychange', () => {

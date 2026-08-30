@@ -89,6 +89,9 @@ export function AnnouncerSettingsModal({
     nextMessage,
     selectedProduct,
     presets = [], setPresets,
+    quickSends = [], setQuickSends,
+    minGapSec = 15, setMinGapSec,
+    productChangeAnnounce = { enabled: false, text: '', repeatCount: 2, intervalSec: 8 }, setProductChangeAnnounce,
 }) {
     const [copied, setCopied] = useState('');
 
@@ -116,6 +119,14 @@ export function AnnouncerSettingsModal({
 
     const handlePresetTextChange = (idx, value) => {
         setPresets(presets.map((p, i) => i === idx ? { ...p, text: value } : p));
+    };
+
+    const updateQuickSend = (idx, field, value) => {
+        setQuickSends(quickSends.map((q, i) => i === idx ? { ...q, [field]: value } : q));
+    };
+
+    const updateProductChangeAnnounce = (field, value) => {
+        setProductChangeAnnounce({ ...productChangeAnnounce, [field]: value });
     };
 
     // 태그/이모지 공통 버튼 스타일
@@ -155,11 +166,18 @@ export function AnnouncerSettingsModal({
                         <label className="text-sm font-bold text-gray-300 flex items-center gap-2">
                             <Clock size={16} className="text-blue-400" /> 공지 간격 (초)
                         </label>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 flex-wrap">
                             <input type="number" value={interval}
                                 onChange={(e) => setInterval(Number(e.target.value))}
                                 className="w-28 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-xl font-mono text-blue-400 focus:border-blue-500 outline-none" />
                             <span className="text-gray-500 text-sm">초 마다 자동 전송</span>
+                            <span className="text-gray-700">|</span>
+                            <span className="text-gray-500 text-xs">자동전송 최소 간격</span>
+                            <input type="number" value={minGapSec}
+                                onChange={(e) => setMinGapSec && setMinGapSec(Math.max(3, Number(e.target.value)))}
+                                title="타이머 여러 개가 동시에 도래해도 이 간격으로 순차 발송 (채팅 도배 방지)"
+                                className="w-16 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm font-mono text-cyan-400 focus:border-cyan-500 outline-none" />
+                            <span className="text-gray-500 text-xs">초</span>
                         </div>
                     </div>
 
@@ -289,6 +307,111 @@ export function AnnouncerSettingsModal({
                                 </div>
                             ))}
                         </div>
+                    </div>
+
+                    {/* ── 빠른 전송 버튼 ── */}
+                    <div className="space-y-3">
+                        <label className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                            <Zap size={16} className="text-cyan-400" /> 빠른 전송 버튼
+                            <span className="text-[10px] text-gray-500 font-normal">채팅창 하단 원터치 전송 · 타이머 ON 시 자동 반복</span>
+                        </label>
+                        <div className="space-y-2">
+                            {quickSends.map((q, i) => (
+                                <div key={i} className={`p-2 rounded-lg border transition-colors space-y-1.5
+                                    ${q.timerOn ? 'bg-cyan-900/10 border-cyan-700/40' : 'bg-gray-800/30 border-gray-700/30'}`}>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="text"
+                                            value={q.label}
+                                            onChange={(e) => updateQuickSend(i, 'label', e.target.value)}
+                                            placeholder="라벨"
+                                            className="w-16 flex-none bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs font-bold text-cyan-300 focus:border-cyan-500 outline-none text-center"
+                                        />
+                                        <input
+                                            type="text"
+                                            value={q.text}
+                                            onChange={(e) => updateQuickSend(i, 'text', e.target.value)}
+                                            placeholder="전송할 문구... ({name}, {code} 등 태그 사용 가능)"
+                                            className="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200 focus:border-cyan-500 outline-none"
+                                        />
+                                        {/* 개별 타이머 토글 */}
+                                        <button
+                                            onClick={() => updateQuickSend(i, 'timerOn', !q.timerOn)}
+                                            title="개별 타이머 자동 반복 전송"
+                                            className={`flex-none w-9 h-5 rounded-full transition-colors duration-200
+                                                ${q.timerOn ? 'bg-cyan-500' : 'bg-gray-600'}`}>
+                                            <span className={`block w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 mx-0.5
+                                                ${q.timerOn ? 'translate-x-4' : 'translate-x-0'}`} />
+                                        </button>
+                                        <input
+                                            type="number"
+                                            value={q.intervalSec}
+                                            onChange={(e) => updateQuickSend(i, 'intervalSec', Math.max(30, Number(e.target.value)))}
+                                            disabled={!q.timerOn}
+                                            title="자동 반복 간격(초)"
+                                            className={`w-16 flex-none bg-gray-800 border rounded px-1.5 py-1 text-xs font-mono text-right outline-none
+                                                ${q.timerOn ? 'text-cyan-300 border-cyan-700/50 focus:border-cyan-500' : 'text-gray-600 border-gray-700'}`}
+                                        />
+                                        <span className={`text-[10px] flex-none ${q.timerOn ? 'text-gray-400' : 'text-gray-600'}`}>초</span>
+                                    </div>
+                                    {q.text?.trim() && (
+                                        <div className="text-[10px] text-green-400/80 italic truncate pl-1">
+                                            → {resolveTemplate(q.text, selectedProduct, 0)}
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                        <p className="text-[10px] text-gray-500 italic">
+                            타이머가 겹치면 위의 "자동전송 최소 간격"으로 순차 발송됩니다. 수동 탭 시 해당 타이머는 리셋됩니다.
+                        </p>
+                    </div>
+
+                    {/* ── 제품 변경 시 자동 발송 ── */}
+                    <div className={`p-3 rounded-lg border transition-colors space-y-2
+                        ${productChangeAnnounce.enabled ? 'bg-teal-900/10 border-teal-700/40' : 'bg-gray-800/30 border-gray-700/30'}`}>
+                        <label className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                            <Zap size={16} className="text-teal-400" /> 제품 변경 시 자동 발송
+                            <span className="text-[10px] text-gray-500 font-normal">유통기한 등 간단 안내 · 지정 횟수만 보내고 자동 정지 (계속 롤링 안 함)</span>
+                        </label>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => updateProductChangeAnnounce('enabled', !productChangeAnnounce.enabled)}
+                                className={`flex-none w-9 h-5 rounded-full transition-colors duration-200
+                                    ${productChangeAnnounce.enabled ? 'bg-teal-500' : 'bg-gray-600'}`}>
+                                <span className={`block w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 mx-0.5
+                                    ${productChangeAnnounce.enabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                            </button>
+                            <input
+                                type="text"
+                                value={productChangeAnnounce.text}
+                                onChange={(e) => updateProductChangeAnnounce('text', e.target.value)}
+                                placeholder="예: {name} 유통기한 {expiry}까지입니다 📦 ({code} / {price}원 태그 사용 가능)"
+                                className="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200 focus:border-teal-500 outline-none"
+                            />
+                            <span className="text-[10px] text-gray-500 flex-none">횟수</span>
+                            <input
+                                type="number"
+                                value={productChangeAnnounce.repeatCount}
+                                onChange={(e) => updateProductChangeAnnounce('repeatCount', Math.max(1, Number(e.target.value)))}
+                                title="제품이 바뀔 때마다 이 횟수만큼만 발송하고 자동 정지"
+                                className="w-14 flex-none bg-gray-800 border border-gray-700 rounded px-1.5 py-1 text-xs font-mono text-teal-300 text-right outline-none focus:border-teal-500"
+                            />
+                            <span className="text-[10px] text-gray-500 flex-none">회, 간격</span>
+                            <input
+                                type="number"
+                                value={productChangeAnnounce.intervalSec}
+                                onChange={(e) => updateProductChangeAnnounce('intervalSec', Math.max(3, Number(e.target.value)))}
+                                title="발송 사이 간격(초)"
+                                className="w-14 flex-none bg-gray-800 border border-gray-700 rounded px-1.5 py-1 text-xs font-mono text-teal-300 text-right outline-none focus:border-teal-500"
+                            />
+                            <span className="text-[10px] text-gray-500 flex-none">초</span>
+                        </div>
+                        {productChangeAnnounce.text?.trim() && (
+                            <div className="text-[10px] text-green-400/80 italic truncate pl-1">
+                                → {resolveTemplate(productChangeAnnounce.text, selectedProduct, 0)}
+                            </div>
+                        )}
                     </div>
 
                     {/* ── 커스텀 템플릿 ── */}

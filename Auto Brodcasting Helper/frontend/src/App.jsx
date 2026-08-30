@@ -10,10 +10,29 @@ import { PrompterOverlay } from './components/PrompterOverlay';
 import { AnnouncerSettingsModal } from './components/AnnouncerSettingsModal';
 import { ScannerGuideModal } from './components/ScannerGuideModal';
 
+// =============================================
+// 공지/빠른전송 설정 localStorage 영속화
+// =============================================
+const ANNOUNCER_STORE_KEY = 'gripbot_announcer_v1';
+function loadAnnouncerStore() {
+  try { return JSON.parse(localStorage.getItem(ANNOUNCER_STORE_KEY)) || {}; } catch { return {}; }
+}
+const STORED = loadAnnouncerStore();
+
+// 플랫폼 집계형 참여 문구: "OOO님 외 N명이 저요!" / "OOO님 외 N명이 추첨에 참여했습니다." 등
+// 프롬프터(태블릿/TV)·핫키워드 집계와 동일한 패턴 — 메인 대시보드 채팅 표시에도 동일하게 적용
+const AGGREGATE_PARTICIPATION_REGEX = /(님\s*외\s*\d+\s*명이\s*저요[!~\s]*$)|(님\s*외\s*\d+\s*명이\s*추첨에\s*참여했습니다\.?\s*$)|(^추첨에\s*참여했습니다\.?\s*$)/;
+
 function App() {
   const [socket, setSocket] = useState(null);
   const [messages, setMessages] = useState([]);
   const [trends, setTrends] = useState([]);
+
+  // 전체 채팅 보관 (화면 200개 제한과 무관 — 다운로드/시간창 집계용)
+  const fullChatLogRef = React.useRef([]);
+  const [trendWindowMin, setTrendWindowMin] = useState(3); // 핫키워드 집계 범위(분)
+  const [trendTick, setTrendTick] = useState(0); // 채팅이 없어도 시간창이 슬라이드되도록 주기 갱신
+  const [chatViewMode, setChatViewMode] = useState('PURE'); // 'NORMAL' | 'PURE' — 순수채팅모드: SYSTEM 안내 제외 (기본 적용)
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [targetUrl, setTargetUrl] = useState('');
@@ -38,26 +57,52 @@ function App() {
   // Auto Announcer State
   // =============================================
   const [announcerEnabled, setAnnouncerEnabled] = useState(false);
-  const [announcerCountdown, setAnnouncerCountdown] = useState(60);
+  const [announcerCountdown, setAnnouncerCountdown] = useState(STORED.interval ?? 60);
   const [nextAutoMsg, setNextAutoMsg] = useState('Next Auto Message...');
   const [isAnnouncerModalOpen, setIsAnnouncerModalOpen] = useState(false);
 
-  // Announcer Settings (설정창에서 변경 가능)
-  const [announcerInterval, setAnnouncerInterval] = useState(60);
-  const [announcerTemplates, setAnnouncerTemplates] = useState(['', '', '']);
-  const [announcerOrder, setAnnouncerOrder] = useState('1, 2, 3');
-  const [announcerPresets, setAnnouncerPresets] = useState([
+  // Announcer Settings (설정창에서 변경 가능 · localStorage 자동 복원)
+  const [announcerInterval, setAnnouncerInterval] = useState(STORED.interval ?? 60);
+  const [announcerTemplates, setAnnouncerTemplates] = useState(STORED.templates ?? ['', '', '']);
+  const [announcerOrder, setAnnouncerOrder] = useState(STORED.order ?? '1, 2, 3');
+  const [announcerPresets, setAnnouncerPresets] = useState(STORED.presets ?? [
     { enabled: false, text: '🔥 지금 {name} 특가 진행 중! {price}에 만나보세요 🛍️' },
     { enabled: false, text: '⏰ 오늘만! {name} {remaining}개 남았어요. 서두르세요!' },
     { enabled: false, text: '✨ {brand} {name} — {k1} {k2} 지금 바로 확인하세요 📦' },
   ]);
 
+  // 빠른 전송 버튼 (개별 타이머 지원 · localStorage 자동 복원)
+  const [quickSends, setQuickSends] = useState(STORED.quickSends ?? [
+    { label: '무배', text: '', timerOn: false, intervalSec: 300 },
+    { label: '증정', text: '', timerOn: false, intervalSec: 300 },
+    { label: '배송', text: '', timerOn: false, intervalSec: 300 },
+  ]);
+  const [minGapSec, setMinGapSec] = useState(STORED.minGapSec ?? 15); // 자동전송 간 최소 간격(초)
+  const [quickCountdowns, setQuickCountdowns] = useState([0, 0, 0]);
+
+  // 제품 변경 시 자동 발송 (유통기한 등 간단 안내) — N회만 발송하고 자동 정지, 계속 롤링 안 함
+  const [productChangeAnnounce, setProductChangeAnnounce] = useState(STORED.productChangeAnnounce ?? {
+    enabled: false, text: '', repeatCount: 2, intervalSec: 8,
+  });
+
   // Announcer Refs (setInterval 내부에서 최신 state 접근용)
   const announcerEnabledRef = React.useRef(false);
-  const announcerIntervalRef = React.useRef(60);
-  const announcerTemplatesRef = React.useRef(['', '', '']);
+  const announcerIntervalRef = React.useRef(STORED.interval ?? 60);
+  const announcerTemplatesRef = React.useRef(STORED.templates ?? ['', '', '']);
   const announcerPresetsRef = React.useRef([]);
   const templateIndexRef = React.useRef(0);
+
+  // 통합 스케줄러 Refs
+  const quickSendsRef = React.useRef([]);
+  const minGapRef = React.useRef(STORED.minGapSec ?? 15);
+  const quickRemainRef = React.useRef([]); // 항목별 남은 초
+  const lastAutoSendTsRef = React.useRef(0); // 마지막 자동 발송 시각
+  const sendQueueRef = React.useRef([]); // 발송 대기 큐 ('ROTATION' | 'QS0'... | 'PRODCHANGE')
+
+  // 제품 변경 자동 발송 상태: remaining=남은 발송 횟수, nextFireAt=다음 발송 예정 시각(ms)
+  const productChangeAnnounceRef = React.useRef(productChangeAnnounce);
+  const productChangeStateRef = React.useRef({ remaining: 0, nextFireAt: 0 });
+  const lastProductKeyRef = React.useRef(null); // 마지막으로 감지한 제품 식별자(변경 감지용)
 
   // =============================================
   // [V4.3 오리지널 엔진] 선착순 실시간 참여 / 판매 로그
@@ -74,6 +119,8 @@ function App() {
   // 스캐너 모드 / 로그 검색 / 코드 자동매칭
   // =============================================
   const [scannerMode, setScannerMode] = useState('AUTO');
+  const scannerModeRef = React.useRef('AUTO');
+  useEffect(() => { scannerModeRef.current = scannerMode; }, [scannerMode]);
   const [autoMatchEnabled, setAutoMatchEnabled] = useState(true); // 바코드 자동 매칭 ON/OFF
   const autoMatchRef = React.useRef(true);
   useEffect(() => { autoMatchRef.current = autoMatchEnabled; }, [autoMatchEnabled]);
@@ -96,6 +143,42 @@ function App() {
   useEffect(() => { announcerIntervalRef.current = announcerInterval; }, [announcerInterval]);
   useEffect(() => { announcerTemplatesRef.current = announcerTemplates; }, [announcerTemplates]);
   useEffect(() => { announcerPresetsRef.current = announcerPresets; }, [announcerPresets]);
+  useEffect(() => { quickSendsRef.current = quickSends; }, [quickSends]);
+  useEffect(() => { minGapRef.current = minGapSec; }, [minGapSec]);
+  useEffect(() => { productChangeAnnounceRef.current = productChangeAnnounce; }, [productChangeAnnounce]);
+
+  // 제품 변경 감지 → 활성화돼있으면 N회 발송 사이클 시작 (기존 사이클은 새 제품으로 리셋)
+  useEffect(() => {
+    const key = selectedProduct ? (selectedProduct.id || selectedProduct.code || selectedProduct.name) : null;
+    if (key === lastProductKeyRef.current) return; // 실제로 바뀐 게 아니면 무시(리렌더 등)
+    lastProductKeyRef.current = key;
+    if (key && productChangeAnnounceRef.current.enabled && productChangeAnnounceRef.current.text?.trim()) {
+      productChangeStateRef.current = { remaining: productChangeAnnounceRef.current.repeatCount || 2, nextFireAt: Date.now() };
+    } else {
+      productChangeStateRef.current = { remaining: 0, nextFireAt: 0 };
+    }
+  }, [selectedProduct]);
+
+  // 설정 변경 시 localStorage 자동 저장 (새로고침해도 유지)
+  useEffect(() => {
+    try {
+      localStorage.setItem(ANNOUNCER_STORE_KEY, JSON.stringify({
+        interval: announcerInterval,
+        templates: announcerTemplates,
+        order: announcerOrder,
+        presets: announcerPresets,
+        quickSends,
+        minGapSec,
+        productChangeAnnounce,
+      }));
+    } catch (e) { /* 저장 실패는 무시 (시크릿 모드 등) */ }
+  }, [announcerInterval, announcerTemplates, announcerOrder, announcerPresets, quickSends, minGapSec, productChangeAnnounce]);
+
+  // 핫키워드 시간창 슬라이드용 주기 갱신 (20초)
+  useEffect(() => {
+    const t = setInterval(() => setTrendTick(x => x + 1), 20000);
+    return () => clearInterval(t);
+  }, []);
 
   // Toast State
   const [toast, setToast] = useState(null);
@@ -113,6 +196,21 @@ function App() {
   const productsRef = React.useRef(products);
   useEffect(() => { productsRef.current = products; }, [products]);
 
+  // 제품 데이터 변경 시 selectedProduct 최신화 (코드 수정/판매수량 변경 후 ref stale 방지)
+  useEffect(() => {
+    if (!selectedProduct) return;
+    const current = products.find(p =>
+      (p.id && p.id === selectedProduct.id) || (!p.id && p.name === selectedProduct.name)
+    );
+    if (!current) return;
+    if (current.code !== selectedProduct.code ||
+        current.sales !== selectedProduct.sales ||
+        current.stock !== selectedProduct.stock) {
+      setSelectedProduct(current);
+      selectedProductRef.current = current;
+    }
+  }, [products]);
+
   // fcfsCodeRef: 핸들러/이벤트 내 최신 감지 코드 접근용
   const fcfsCodeRef = React.useRef('');
   useEffect(() => { fcfsCodeRef.current = fcfsCode; }, [fcfsCode]);
@@ -125,11 +223,11 @@ function App() {
 
   // =============================================
   // Live Hot Keywords — 실시간 채팅 키워드 분석
-  // messages 변경 시마다 클라이언트 측 빈도 계산
+  // [개선] 개수 기준(최근 200개) → 시간창 기준(최근 N분)
+  // 채팅 속도와 무관하게 항상 "지금"의 키워드를 집계하고,
+  // 직전 시간창과 비교해 증감(delta)을 표시합니다.
   // =============================================
   useEffect(() => {
-    if (messages.length === 0) { setTrends([]); return; }
-
     const STOPWORDS = new Set([
       'ㅋ','ㅋㅋ','ㅋㅋㅋ','ㅋㅋㅋㅋ','ㅎ','ㅎㅎ','ㅎㅎㅎ','ㅠ','ㅠㅠ','ㅜ','ㅜㅜ','ㅇ','ㅇㅇ','ㄷㄷ',
       '네','넵','예','아','오','우','음','와','야','어','응','헐','대박','와우','우와',
@@ -139,42 +237,108 @@ function App() {
       '진짜','정말','완전','너무','많이','그냥','약간','좀',
       '같아','같은','같이','있어','없어','보여','이거','저거','그거',
       '개','명','번','회','원','분','초','저요','저요!','저요!!',
+      // [실측 반영] 제품/주제 정보가 없는 순수 정형 질문·요청 어미 — 토큰 단독으로는 의미 없음
+      '되나요','되요','돼요','되나','그런가요','그래요','그렇군요','진짜요',
+      '부탁드려요','부탁드립니다','부탁드릴게요','부탁해요','부탁드림',
+      '몇알이에요','몇개예요','몇개인가요','몇명이에요','어떻게해요','어떻게하나요',
+      // [2차 실측 반영] 7/18·7/19 방송(9.6만건) 분석 — 주제 정보 없는 시간 표현/범용 서술어.
+      // 진행자 호칭("언니"/"마녀님")은 의도적으로 목록에서 제외(사용자 확인).
+      '오늘','내일','어제','저녁에','지금',
+      '좋아요','있어요','했어요','혹시',
+      // [3차 실측 반영] "해주세요"(558건)를 실제로 뜯어보니 릴릴(88)/선스틱(82)/들깨크림(34) 등
+      // 완전히 다른 요청들이 우연히 같은 단어를 써서 뭉쳐진 것뿐 — 주어 없이 단독 노출되면
+      // "몇 명이 요청했는지"만 보일 뿐 "뭘 요청했는지"는 알 수 없어 사실상 무의미함.
+      // 제품명과 정확히 묶어 보여줄 방법이 없는 한 노출 자체가 오히려 오해를 유발해 제외.
+      '해주세요','해줘요','있나요','하나요','제발','주세요',
     ]);
 
     const QUERY_PATTERN = /[?？]|어디|얼마|있나|없나|어때|뭐예|무엇|언제|어떻게|구매|살수|파나요|살게|사고|성분|효과|사이즈|용량|배송|재고|후기|사용법|추천|비교/;
     const REACTION_PATTERN = /저요|최고|짱|신기|이쁘|예쁘|좋아|좋네|좋겠|갖고싶|사고싶|👍|❤|💕|😍|🔥|대박|헐|놀라|완전좋/;
 
-    const freqMap = new Map();
+    // [실측 검증] 실제 방송 로그 1727건 분석 결과, 조사가 붙은 상태로 토큰화되어
+    // 같은 단어("대왕김치"/"대왕김치랑"/"대왕김치는요" 등)가 최대 5개로 쪼개지는 현상 확인.
+    // 접미어 트리밍만으로 "대왕김치" 8위→5위, "물만두" 7위→4위로 순위 개선 검증됨.
+    const JOSA_SUFFIXES = ['이라서', '에서는', '에게는', '으로는', '까지는', '부터는',
+      '이라도', '으로도', '에서도', '이랑', '과는', '와는', '은요', '는요', '이요', '도요',
+      '으로', '에서', '에게', '부터', '까지', '이나', '나요', '인가요', '인가욤', '인가여',
+      '은', '는', '이', '가', '을', '를', '도', '만', '과', '와', '로', '나', '랑'
+    ].sort((a, b) => b.length - a.length);
 
-    messages.forEach(msg => {
-      if (!msg.message || msg.intent === 'BOT_REPLY') return;
-      const isQuery = QUERY_PATTERN.test(msg.message);
-      const isParticipation = !isQuery && (msg.intent === 'BUY' || REACTION_PATTERN.test(msg.message));
-      const category = isQuery ? 'QUERY' : isParticipation ? 'PARTICIPATION' : 'QUERY';
+    // [실측 재검증] "못난이"(81건 언급된 실제 제품 별칭)가 "못난"+"이"로 잘못 분리되는
+    // 오탐 발견 — 한국어는 "이" 지소사(애칭 접미사)와 주격조사 "이"가 동형이라 구분 불가.
+    // 잔여 길이 기준을 2→3으로 올려 2음절+조사 패턴만 남기고 실제 고유명사는 보존.
+    const stripJosa = (word) => {
+      if (word.length <= 2) return word;
+      for (const j of JOSA_SUFFIXES) {
+        if (word.endsWith(j) && word.length - j.length >= 3) return word.slice(0, -j.length);
+      }
+      return word;
+    };
 
-      const tokens = msg.message
-        .replace(/[^가-힣ㄱ-ㆎa-zA-Z0-9\s]/g, ' ')
-        .split(/\s+/)
-        .map(w => w.trim())
-        .filter(w => w.length >= 2 && !STOPWORDS.has(w) && !/^\d+$/.test(w));
+    // [노이즈 필터] 등장 횟수가 아니라 "몇 명이 말했는가"로 집계하되,
+    // 한 사람의 반복도 KEYWORD_REPEAT_CAP회까지는 인정(완전 무시하지 않음).
+    // 1로 두면 순수 인원수 집계, 값을 올릴수록 반복 발화의 비중이 커짐.
+    const KEYWORD_REPEAT_CAP = 3;
+    // [1순위 — 실측 확인된 버그] "OOO님 외 N명이 저요!" / "OOO님 외 N명이 추첨에 참여했습니다."
+    // 같은 플랫폼 집계 문구가 토큰화되어 "추첨에"(266~357명), "참여했습니다", "N명이" 등이
+    // 실제로는 아무 주제 정보가 없는데도 TOP 순위를 그대로 차지하던 문제. 통째로 제외.
+    // [재검증] 닉네임에 공백이 섞인 경우("행복한 날들만 가득님" 등) ^\S+ 로는 못 잡던 걸
+    // 발견해 님/외/명이 패턴 자체로 재작성 — 실측 273/371건 전량 매칭 확인.
+    const AGGREGATE_PARTICIPATION = /(님\s*외\s*\d+\s*명이\s*저요[!~\s]*$)|(님\s*외\s*\d+\s*명이\s*추첨에\s*참여했습니다\.?\s*$)|(^추첨에\s*참여했습니다\.?\s*$)/;
+    const computeFreq = (msgs) => {
+      const freqMap = new Map(); // key -> Map(닉네임 -> 등장횟수)
+      msgs.forEach(msg => {
+        if (!msg.message || msg.intent === 'BOT_REPLY' || msg.nickname === 'SYSTEM') return;
+        if (AGGREGATE_PARTICIPATION.test(msg.message.trim())) return;
+        const isQuery = QUERY_PATTERN.test(msg.message);
+        const isParticipation = !isQuery && (msg.intent === 'BUY' || REACTION_PATTERN.test(msg.message));
+        const category = isQuery ? 'QUERY' : isParticipation ? 'PARTICIPATION' : 'QUERY';
 
-      tokens.forEach(word => {
-        const key = word + '::' + category;
-        freqMap.set(key, (freqMap.get(key) || 0) + 1);
+        const tokens = msg.message
+          .replace(/[^가-힣ㄱ-ㆎa-zA-Z0-9\s]/g, ' ')
+          .split(/\s+/)
+          .map(w => stripJosa(w.trim()))
+          .filter(w => w.length >= 2 && !STOPWORDS.has(w) && !/^\d+$/.test(w));
+
+        const nickname = msg.nickname || '익명';
+        tokens.forEach(word => {
+          const key = word + '::' + category;
+          if (!freqMap.has(key)) freqMap.set(key, new Map());
+          const personMap = freqMap.get(key);
+          personMap.set(nickname, (personMap.get(nickname) || 0) + 1);
+        });
       });
-    });
+      return freqMap;
+    };
 
-    const result = Array.from(freqMap.entries())
-      .filter(([, freq]) => freq >= 1)
-      .map(([key, frequency]) => {
+    const sumCapped = (personMap) =>
+      Array.from(personMap.values()).reduce((sum, c) => sum + Math.min(c, KEYWORD_REPEAT_CAP), 0);
+
+    const now = Date.now();
+    const winMs = trendWindowMin * 60000;
+    const all = fullChatLogRef.current;
+    const currentMsgs = all.filter(m => (m.ts || 0) >= now - winMs);
+    const prevMsgs = all.filter(m => (m.ts || 0) >= now - 2 * winMs && (m.ts || 0) < now - winMs);
+
+    if (currentMsgs.length === 0) { setTrends([]); return; }
+
+    const curMap = computeFreq(currentMsgs);
+    const prevMap = computeFreq(prevMsgs);
+
+    const result = Array.from(curMap.entries())
+      .map(([key, personMap]) => {
         const sep = key.lastIndexOf('::');
-        return { term: key.slice(0, sep), frequency, category: key.slice(sep + 2) };
+        const frequency = sumCapped(personMap); // 1인당 최대 KEYWORD_REPEAT_CAP회까지만 인정
+        const prevPersonMap = prevMap.get(key);
+        const prevFreq = prevPersonMap ? sumCapped(prevPersonMap) : 0;
+        const delta = prevFreq === 0 ? 'new' : frequency > prevFreq ? 'up' : frequency < prevFreq ? 'down' : 'same';
+        return { term: key.slice(0, sep), frequency, category: key.slice(sep + 2), delta };
       })
       .sort((a, b) => b.frequency - a.frequency)
       .slice(0, 30);
 
     setTrends(result);
-  }, [messages]);
+  }, [messages, trendWindowMin, trendTick]);
 
   // =============================================
   // WebSocket 연결 (AUTH_SYSTEM 인증 포함)
@@ -234,68 +398,193 @@ function App() {
   }, []);
 
   // =============================================
-  // 공지 자동 타이머 (프론트엔드 자체 관리)
+  // 템플릿 태그 치환 (전체 순환 · 빠른전송 공용)
+  // =============================================
+  const resolveAutoTemplate = (template, snippetIdx = 0) => {
+    if (!template) return '';
+    const product = selectedProductRef.current;
+    const keywords = Array.isArray(product?.keywords)
+      ? product.keywords.map(k => String(k).replace(/^#/, '').trim()).filter(k => k)
+      : [];
+    const snippet = keywords.length > 0 ? keywords[snippetIdx % keywords.length] : '';
+    const priceStr = product?.price ? `₩${Number(product.price).toLocaleString()}` : '';
+    const remaining = product?.stock != null
+      ? String((product.stock || 0) - (product.sales || 0)) : '';
+
+    let msg = template
+      .replace('{name}',      product?.name    || '(상품 미선택)')
+      .replace('{expiry}',    product?.expiry  || '')
+      .replace('{brand}',     product?.brand   || '')
+      .replace('{price}',     priceStr)
+      .replace('{stock}',     String(product?.stock ?? ''))
+      .replace('{remaining}', remaining)
+      .replace('{code}',      product?.code    || '')
+      .replace('{snippet}',   snippet);
+    keywords.forEach((kw, i) => { msg = msg.replaceAll(`{k${i + 1}}`, kw); });
+    return msg.replace(/\{k\d+\}/g, '');
+  };
+
+  const sendAutoChat = (msg) => {
+    if (socketRef.current?.readyState === 1) {
+      socketRef.current.send(JSON.stringify({
+        type: 'SEND_CHAT',
+        message: msg,
+        requestId: Date.now().toString()
+      }));
+      return true;
+    }
+    return false;
+  };
+
+  // 템플릿에 사용된 태그 중 실제 값이 비어있는 게 있으면 그 태그 이름들을 반환 (없으면 빈 배열)
+  // — "화장품1 유통기한 까지입니다" 처럼 빈칸 있는 메시지가 그대로 나가는 걸 막기 위함
+  const findEmptyReferencedTags = (template, product) => {
+    const empty = [];
+    const fieldMap = { name: product?.name, expiry: product?.expiry, brand: product?.brand, code: product?.code };
+    Object.keys(fieldMap).forEach(key => {
+      if (template.includes(`{${key}}`) && !fieldMap[key]) empty.push(key);
+    });
+    if (template.includes('{price}') && !product?.price) empty.push('price');
+    if (template.includes('{stock}') && !product?.stock) empty.push('stock');
+    if (template.includes('{remaining}') && product?.stock == null) empty.push('remaining');
+    const keywords = Array.isArray(product?.keywords) ? product.keywords : [];
+    if (template.includes('{snippet}') && keywords.length === 0) empty.push('snippet');
+    (template.match(/\{k\d+\}/g) || []).forEach(tag => {
+      const idx = parseInt(tag.match(/\d+/)[0], 10) - 1;
+      if (!keywords[idx]) empty.push(tag);
+    });
+    return empty;
+  };
+
+  // 전체 순환 공지 1건 발송 (템플릿 없으면 null)
+  const fireRotationMessage = () => {
+    const customTemplates = announcerTemplatesRef.current.filter(t => t.trim());
+    const presetTemplates = announcerPresetsRef.current
+      .filter(p => p.enabled && p.text?.trim())
+      .map(p => p.text);
+    const allTemplates = [...customTemplates, ...presetTemplates];
+    if (allTemplates.length === 0) return null;
+
+    const msg = resolveAutoTemplate(
+      allTemplates[templateIndexRef.current % allTemplates.length],
+      templateIndexRef.current
+    );
+    templateIndexRef.current = (templateIndexRef.current + 1) % allTemplates.length;
+    setNextAutoMsg(msg);
+    sendAutoChat(msg);
+    return msg;
+  };
+
+  // =============================================
+  // 통합 자동전송 스케줄러 (1초 틱 하나로 전체 관리)
+  // - 전체 순환 공지 + 빠른전송 개별 타이머를 하나의 발송 큐로 통합
+  // - 최소 간격(minGapSec) 보장: 동시에 도래해도 순차 발송 → 채팅 도배 방지
+  // - 타이머 리셋은 "실제 발송 시각" 기준 → 밀림 누적 없음
   // =============================================
   useEffect(() => {
     const timer = setInterval(() => {
-      // OFF 상태면 카운트다운을 현재 interval 값으로 리셋 유지
+      const now = Date.now();
+
+      // ── 1) 전체 순환 카운트다운 ──
       if (!announcerEnabledRef.current) {
         setAnnouncerCountdown(announcerIntervalRef.current);
-        return;
+        sendQueueRef.current = sendQueueRef.current.filter(s => s !== 'ROTATION');
+      } else {
+        setAnnouncerCountdown(prev => {
+          if (prev <= 1) {
+            // 도래 → 큐 삽입 후 0에서 대기 (실제 발송 시 리셋)
+            if (!sendQueueRef.current.includes('ROTATION')) sendQueueRef.current.push('ROTATION');
+            return 0;
+          }
+          return prev - 1;
+        });
       }
 
-      setAnnouncerCountdown(prev => {
-        if (prev <= 1) {
-          // 🔔 카운트다운 완료 → 공지 메시지 자동 전송
-          // 커스텀 템플릿 + 활성화된 프리셋 병합
-          const customTemplates = announcerTemplatesRef.current.filter(t => t.trim());
-          const presetTemplates = announcerPresetsRef.current
-            .filter(p => p.enabled && p.text?.trim())
-            .map(p => p.text);
-          const allTemplates = [...customTemplates, ...presetTemplates];
-
-          if (allTemplates.length > 0) {
-            const product = selectedProductRef.current;
-            const keywords = Array.isArray(product?.keywords)
-              ? product.keywords.map(k => String(k).replace(/^#/, '').trim()).filter(k => k)
-              : [];
-            const snippetIdx = templateIndexRef.current;
-            const snippet = keywords.length > 0 ? keywords[snippetIdx % keywords.length] : '';
-            const priceStr = product?.price ? `₩${Number(product.price).toLocaleString()}` : '';
-            const remaining = product?.stock != null
-              ? String((product.stock || 0) - (product.sales || 0)) : '';
-
-            let msg = allTemplates[templateIndexRef.current % allTemplates.length]
-              .replace('{name}',      product?.name    || '(상품 미선택)')
-              .replace('{expiry}',    product?.expiry  || '')
-              .replace('{brand}',     product?.brand   || '')
-              .replace('{price}',     priceStr)
-              .replace('{stock}',     String(product?.stock ?? ''))
-              .replace('{remaining}', remaining)
-              .replace('{code}',      product?.code    || '')
-              .replace('{snippet}',   snippet);
-            keywords.forEach((kw, i) => { msg = msg.replaceAll(`{k${i + 1}}`, kw); });
-            msg = msg.replace(/\{k\d+\}/g, '');
-
-            templateIndexRef.current = (templateIndexRef.current + 1) % allTemplates.length;
-            setNextAutoMsg(msg);
-            if (socketRef.current?.readyState === 1) {
-              socketRef.current.send(JSON.stringify({
-                type: 'SEND_CHAT',
-                message: msg,
-                requestId: Date.now().toString()
-              }));
-            }
-          }
-          // 다음 카운트다운 시작
-          return announcerIntervalRef.current;
+      // ── 2) 빠른전송 개별 카운트다운 ──
+      const qs = quickSendsRef.current;
+      const remain = quickRemainRef.current;
+      qs.forEach((item, i) => {
+        const id = 'QS' + i;
+        if (!item.timerOn || !item.text?.trim()) {
+          remain[i] = item.intervalSec || 0;
+          sendQueueRef.current = sendQueueRef.current.filter(s => s !== id);
+          return;
         }
-        return prev - 1;
+        if (remain[i] == null || remain[i] > (item.intervalSec || 0)) remain[i] = item.intervalSec;
+        if (remain[i] <= 1) {
+          if (!sendQueueRef.current.includes(id)) sendQueueRef.current.push(id);
+          remain[i] = 0;
+        } else {
+          remain[i] = remain[i] - 1;
+        }
       });
+      setQuickCountdowns([...remain]);
+
+      // ── 2.5) 제품 변경 자동 발송: 남은 횟수가 있고 예정 시각이 됐으면 큐에 삽입 ──
+      const pca = productChangeStateRef.current;
+      if (pca.remaining > 0 && now >= pca.nextFireAt) {
+        if (!sendQueueRef.current.includes('PRODCHANGE')) sendQueueRef.current.push('PRODCHANGE');
+      }
+
+      // ── 3) 발송 큐: 최소 간격 충족 시 1건씩 방출 ──
+      if (sendQueueRef.current.length > 0 &&
+          (now - lastAutoSendTsRef.current) >= minGapRef.current * 1000) {
+        const src = sendQueueRef.current.shift();
+        if (src === 'ROTATION') {
+          const sent = fireRotationMessage();
+          if (sent !== null) lastAutoSendTsRef.current = now;
+          setAnnouncerCountdown(announcerIntervalRef.current);
+        } else if (src === 'PRODCHANGE') {
+          const cfg = productChangeAnnounceRef.current;
+          const state = productChangeStateRef.current;
+          const currentProduct = selectedProductRef.current;
+          const emptyTags = (cfg.enabled && cfg.text?.trim())
+            ? findEmptyReferencedTags(cfg.text, currentProduct)
+            : [];
+          if (emptyTags.length > 0) {
+            // 값이 비어있는 태그가 있으면 발송 패스 — 제품이 안 바뀌는 한 다시 시도해도
+            // 똑같이 비어있을 것이므로 이번 제품에 대한 사이클은 통째로 취소
+            console.log(`⏭️ [제품변경 자동발송] 빈 태그(${emptyTags.join(', ')})로 인해 패스`);
+            state.remaining = 0;
+          } else if (cfg.enabled && cfg.text?.trim()) {
+            sendAutoChat(resolveAutoTemplate(cfg.text));
+            lastAutoSendTsRef.current = now;
+            state.remaining = Math.max(0, state.remaining - 1);
+            state.nextFireAt = now + (cfg.intervalSec || 8) * 1000;
+          }
+        } else {
+          const i = Number(src.slice(2));
+          const item = quickSendsRef.current[i];
+          if (item?.text?.trim()) {
+            sendAutoChat(resolveAutoTemplate(item.text));
+            lastAutoSendTsRef.current = now;
+          }
+          quickRemainRef.current[i] = item?.intervalSec || 60;
+        }
+      }
     }, 1000);
 
     return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // 마운트 시 한 번만 실행
+
+  // 빠른전송 수동 탭: 즉시 발송 + 해당 타이머 리셋 (직후 자동 재발송 방지)
+  const handleQuickSend = (i) => {
+    const item = quickSends[i];
+    if (!item?.text?.trim()) {
+      showToast('⚙ 설정에서 빠른전송 문구를 먼저 입력하세요.', 'error');
+      setIsAnnouncerModalOpen(true);
+      return;
+    }
+    const msg = resolveAutoTemplate(item.text);
+    if (sendAutoChat(msg)) {
+      lastAutoSendTsRef.current = Date.now();
+      quickRemainRef.current[i] = item.intervalSec || 60;
+      showToast(`⚡ [${item.label}] 전송 완료`, 'success');
+    } else {
+      showToast('서버 연결이 없어 전송하지 못했습니다.', 'error');
+    }
+  };
 
   // =============================================
   // 판매량 적용
@@ -366,31 +655,32 @@ function App() {
 
       // ── 채팅 메시지 ───────────────────────────
       case 'CHAT_MSG':
-      case 'SALES_UPDATE':
-        setMessages(prev => {
-          const isDuplicate = prev.some(m =>
-            m.nickname === payload.data.nickname &&
-            m.message === payload.data.message &&
-            (new Date().getTime() - (m.ts || 0) < 2000)
-          );
-          if (isDuplicate) return prev;
+      case 'SALES_UPDATE': {
+        const d = payload.data;
+        const now_cm = Date.now();
+        // 중복 검사: 전체 보관 로그의 최근 항목과 대조 (화면 배열과 무관하게 일관 유지)
+        const recentLog = fullChatLogRef.current.slice(-30);
+        const isDuplicate = recentLog.some(m =>
+          m.nickname === d.nickname &&
+          m.message === d.message &&
+          (now_cm - (m.ts || 0) < 2000)
+        );
+        if (isDuplicate) break;
 
-          const newMsg = {
-            ...payload.data,
-            ts: payload.data.ts || Date.now()
-          };
+        const newMsg = { ...d, ts: d.ts || now_cm };
 
-          // 구매 감지
-          const purchaseRegex = /저요|(\d+\s*개)/;
-          if (purchaseRegex.test(newMsg.message)) {
-            newMsg.intent = 'BUY';
-          } else {
-            if (newMsg.intent === 'BUY') newMsg.intent = 'CHAT';
-          }
+        // 구매 감지
+        const purchaseRegex = /저요|(\d+\s*개)/;
+        if (purchaseRegex.test(newMsg.message)) {
+          newMsg.intent = 'BUY';
+        } else {
+          if (newMsg.intent === 'BUY') newMsg.intent = 'CHAT';
+        }
 
-          return [...prev.slice(-199), newMsg];
-        });
+        fullChatLogRef.current.push(newMsg); // 전체 보관 (다운로드/키워드 집계용)
+        setMessages(prev => [...prev.slice(-199), newMsg]);
         break;
+      }
 
       // ── 선착순 실시간 참여 카운터 (디스플레이 전용) ─────────────
       // 판매 시스템(fcfsCode, lastFcfsWinnersRef)과 완전 분리
@@ -451,11 +741,15 @@ function App() {
 
         lastFcfsWinnersRef.current = { fingerprint, count: winnerCount, logId: newLog.id, ts: now_fw };
 
-        setMessages(prev => [...prev.slice(-199), {
-          nickname: '🤖 BOT',
-          message: `📢 [판매종료] 당첨자 ${winnerCount}명 집계 완료!`,
-          intent: 'BOT_REPLY', ts: Date.now()
-        }]);
+        {
+          const botMsg_fw = {
+            nickname: '🤖 BOT',
+            message: `📢 [판매종료] 당첨자 ${winnerCount}명 집계 완료!`,
+            intent: 'BOT_REPLY', ts: Date.now()
+          };
+          fullChatLogRef.current.push(botMsg_fw);
+          setMessages(prev => [...prev.slice(-199), botMsg_fw]);
+        }
         showToast(`📢 [판매종료] 당첨자 ${winnerCount}명 집계 완료!`, 'info');
 
         // ref 동기 업데이트 → CART_EVENT가 바로 뒤따라와도 최신 로그를 읽을 수 있음
@@ -554,23 +848,26 @@ function App() {
         break;
 
       // ── 봇 응답 ───────────────────────────────
-      case 'BOT_REPLY':
-        setMessages(prev => {
-          const isDuplicate = prev.some(m =>
-            m.nickname === '🤖 BOT' &&
-            m.message === payload.data.replyText &&
-            (Date.now() - (m.ts || 0) < 2000)
-          );
-          if (isDuplicate) return prev;
-          return [...prev.slice(-199), {
-            nickname: '🤖 BOT',
-            message: payload.data.replyText,
-            intent: 'BOT_REPLY',
-            keywords: [],
-            ts: Date.now()
-          }];
-        });
+      case 'BOT_REPLY': {
+        const now_br = Date.now();
+        const recentBr = fullChatLogRef.current.slice(-30);
+        const isDupBr = recentBr.some(m =>
+          m.nickname === '🤖 BOT' &&
+          m.message === payload.data.replyText &&
+          (now_br - (m.ts || 0) < 2000)
+        );
+        if (isDupBr) break;
+        const botMsg_br = {
+          nickname: '🤖 BOT',
+          message: payload.data.replyText,
+          intent: 'BOT_REPLY',
+          keywords: [],
+          ts: now_br
+        };
+        fullChatLogRef.current.push(botMsg_br);
+        setMessages(prev => [...prev.slice(-199), botMsg_br]);
         break;
+      }
 
       // ── 채팅 전송 결과 ────────────────────────
       case 'CHAT_SEND_RESULT':
@@ -594,6 +891,56 @@ function App() {
       case 'SHOW_CUE':
         setPrompterMsg(payload.data);
         break;
+
+      // ── 바코드 스캐너 ─────────────────────────
+      case 'SCANNER_CODE': {
+        const scannedCode = payload.data?.code;
+        if (!scannedCode) break;
+
+        const sendScannerResult = (matched, productName = '') => {
+          socketRef.current?.send(JSON.stringify({
+            type: 'SCANNER_RESULT',
+            data: { matched, productName, code: scannedCode }
+          }));
+        };
+
+        if (scannerModeRef.current === 'AUTO') {
+          // AUTO: code 우선 매칭(항상) → barcode 매칭(autoMatchEnabled ON일 때만)
+          const matched = productsRef.current.find(p => p.code && p.code === scannedCode) ||
+                          (autoMatchRef.current && productsRef.current.find(p => p.barcode && p.barcode === scannedCode));
+          if (matched) {
+            handleSelectProduct(matched);
+            showToast(`✅ 스캔 매칭: ${matched.name}`, 'success');
+            sendScannerResult(true, matched.name);
+          } else {
+            showToast(`⚠️ 미등록 바코드: ${scannedCode}`, 'error');
+            sendScannerResult(false);
+          }
+        } else {
+          // MANUAL: 현재 선택된 제품에 바코드 등록
+          const sel = selectedProductRef.current;
+          if (!sel) {
+            showToast('⚠️ 먼저 제품을 선택하세요.', 'error');
+            sendScannerResult(false);
+            break;
+          }
+          if (sel.barcode) {
+            showToast(`ℹ️ 이미 바코드 등록됨: ${sel.barcode}`, 'info');
+            sendScannerResult(true, sel.name);
+            break;
+          }
+          const updated = productsRef.current.map(p =>
+            p.id === sel.id ? { ...p, barcode: scannedCode } : p
+          );
+          setProducts(updated);
+          const updatedSel = { ...sel, barcode: scannedCode };
+          selectedProductRef.current = updatedSel;
+          setSelectedProduct(updatedSel);
+          showToast(`✅ [${sel.name}] 바코드 등록: ${scannedCode}`, 'success');
+          sendScannerResult(true, sel.name);
+        }
+        break;
+      }
 
       default:
         break;
@@ -647,6 +994,12 @@ function App() {
     socket.send(JSON.stringify({ type: 'UPDATE_URL', url: targetUrl }));
   };
 
+  // 영상창(그립 라이브 스니퍼 창)의 현재 크기/위치를 저장 — 다음 실행부터 자동 복원
+  const handleSaveVideoWindow = () => {
+    if (!socket) return;
+    socket.send(JSON.stringify({ type: 'SAVE_VIDEO_WINDOW' }));
+  };
+
   const sendChatMessage = (e) => {
     e.preventDefault();
     if (!chatInput.trim() || !socket) return;
@@ -655,12 +1008,16 @@ function App() {
   };
 
   const handleUpdateProduct = (idOrCode, field, value) => {
-    setProducts(prev => prev.map(p => {
-      if ((p.id && p.id === idOrCode) || (!p.id && p.code === idOrCode)) {
-        return { ...p, [field]: value };
-      }
-      return p;
-    }));
+    setProducts(prev => {
+      const updated = prev.map(p => {
+        // idOrCode가 빈 문자열이면 코드 기반 매칭 금지 (빈 코드 제품 전체 오매칭 방지)
+        if (p.id && p.id === idOrCode) return { ...p, [field]: value };
+        if (!p.id && idOrCode && p.code === idOrCode) return { ...p, [field]: value };
+        return p;
+      });
+      productsRef.current = updated; // CART_EVENT race condition 방지: ref 즉시 동기화
+      return updated;
+    });
   };
 
   const handleUpdateLogCode = (logId, newCode) => {
@@ -684,6 +1041,26 @@ function App() {
       }));
     }
   }, [products]);
+
+  // 태블릿 프롬프터 "🏆 TOP 정보" 탭 동기화
+  // 키워드 집계(STOPWORDS·조사 처리 등)는 여기서만 계산하고, 프롬프터는 결과만 받아 표시.
+  // 로직을 두 파일에 중복 구현하면 튜닝할 때마다 어긋나므로 단일 소스로 유지.
+  useEffect(() => {
+    if (socketRef.current?.readyState === 1) {
+      const topProducts = products
+        .filter(p => (p.sales || 0) > 0)
+        .map(p => ({ code: p.code, name: p.name, sales: p.sales || 0, price: p.price || 0 }));
+
+      socketRef.current.send(JSON.stringify({
+        type: 'TOP_STATS_SYNC',
+        data: {
+          topProducts,
+          keywordsQuery: trends.filter(t => t.category === 'QUERY').slice(0, 5),
+          keywordsReaction: trends.filter(t => t.category === 'PARTICIPATION').slice(0, 5),
+        }
+      }));
+    }
+  }, [products, trends]);
 
   // 프롬프터: 상품 선택 시 실시간 동기화
   useEffect(() => {
@@ -744,26 +1121,46 @@ function App() {
 
   // V4.3 오리지널: 플로팅 배너 터치 시 수동 매칭
   const handleMapNewCode = (code) => {
-    const product = selectedProductRef.current;
+    const selRef = selectedProductRef.current;
+    if (!selRef) {
+      showToast('⚠️ 제품을 먼저 선택해주세요.', 'error');
+      return;
+    }
+
+    // selectedProductRef가 stale할 수 있으므로 productsRef에서 최신 상태로 조회
+    const product = productsRef.current.find(p =>
+      (p.id && p.id === selRef.id) || (!p.id && p.name === selRef.name)
+    );
     if (!product) {
       showToast('⚠️ 제품을 먼저 선택해주세요.', 'error');
+      return;
+    }
+
+    // 해당 코드가 이미 다른 제품에 등록된 경우 차단 (코드 수정 후 배너 오클릭 방지)
+    const existingOwner = productsRef.current.find(p => p.code === code);
+    if (existingOwner && existingOwner.id !== product.id) {
+      showToast(`⚠️ 코드 "${code}"는 이미 [${existingOwner.name}]에 등록된 코드입니다.\n해당 제품을 선택 후 진행하세요.`, 'error');
       return;
     }
 
     const matchingLogs = salesLogsRef.current.filter(l => l.code === code && !l.applied);
     const totalCount = matchingLogs.reduce((sum, l) => sum + l.count, 0);
 
-    setProducts(prev => prev.map(p => {
-      const isTarget = p.id ? p.id === product.id : (p.name === product.name);
-      return isTarget ? { ...p, code, sales: (p.sales || 0) + totalCount } : p;
-    }));
+    setProducts(prev => {
+      const updated = prev.map(p => {
+        const isTarget = p.id ? p.id === product.id : (p.name === product.name);
+        return isTarget ? { ...p, code, sales: (p.sales || 0) + totalCount } : p;
+      });
+      productsRef.current = updated;
+      return updated;
+    });
 
     const updatedProduct = { ...product, code, sales: (product.sales || 0) + totalCount };
     setSelectedProduct(updatedProduct);
     selectedProductRef.current = updatedProduct;
     setPrompterMsg({ mode: 'PRODUCT', product: updatedProduct });
 
-    setSalesLogs(prev => prev.map(l => 
+    setSalesLogs(prev => prev.map(l =>
       (l.code === code && !l.applied) ? { ...l, applied: true, productName: product.name } : l
     ));
     showToast(`✅ [수동 매칭] ${product.name} +${totalCount}개`, 'success');
@@ -819,66 +1216,19 @@ function App() {
   // 채팅 + 판매 데이터 통합 CSV 다운로드
   // =============================================
   const handleDownloadReport = () => {
-    if (messages.length === 0 && products.length === 0) {
+    const allChat = fullChatLogRef.current; // 전체 채팅 (화면 200개 제한과 무관)
+    if (allChat.length === 0 && products.length === 0) {
       alert('다운로드할 데이터가 없습니다.');
       return;
     }
     const dateStr = new Date().toISOString().slice(0, 10);
-    const timeStr = new Date().toLocaleString('ko-KR');
 
-    // CSV 셀 이스케이프
-    const esc = (v) => {
-      const s = (v == null) ? '' : String(v);
-      if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
-        return '"' + s.replace(/"/g, '""') + '"';
-      }
-      return s;
-    };
-    const toRow = (cells) => cells.map(esc).join(',');
-
-    const rows = [];
-
-    // 섹션 1: 채팅 로그
-    rows.push('[채팅 로그] ' + timeStr);
-    rows.push(toRow(['#', '시간', '닉네임', '메시지', '인텐트']));
-    messages.forEach((m, i) => {
-      rows.push(toRow([
-        i + 1,
-        m.ts ? new Date(m.ts).toLocaleString('ko-KR') : '',
-        m.nickname || '',
-        m.message || '',
-        m.intent || '',
-      ]));
-    });
-
-    rows.push('');
-
-    // 섹션 2: 제품 판매 현황
-    rows.push('[제품 판매 현황] ' + timeStr);
-    rows.push(toRow(['#', '코드', '브랜드', '제품명', '가격', '재고', '판매', '잔여', '매출액', '유통기한']));
-    products.forEach((p, i) => {
-      const sold = p.sales || 0;
-      rows.push(toRow([
-        i + 1,
-        p.code || '',
-        p.brand || '',
-        p.name || '',
-        p.price || 0,
-        p.stock || 0,
-        sold,
-        (p.stock || 0) - sold,
-        (p.price || 0) * sold,
-        p.expiry || '',
-      ]));
-    });
-
-    // xlsx 라이브러리로 진짜 엑셀 파일 생성 (인코딩/줄바꿈 문제 원천 차단)
     const wb = XLSX.utils.book_new();
 
-    // 시트 1: 채팅 로그
+    // 시트 1: 채팅 로그 (전체 보관분)
     const chatSheet = XLSX.utils.aoa_to_sheet([
       ['#', '시간', '닉네임', '메시지', '인텐트'],
-      ...messages.map((m, i) => [
+      ...allChat.map((m, i) => [
         i + 1,
         m.ts ? new Date(m.ts).toLocaleString('ko-KR') : '',
         m.nickname || '',
@@ -908,6 +1258,29 @@ function App() {
       }),
     ]);
     XLSX.utils.book_append_sheet(wb, productSheet, '제품 판매 현황');
+
+    // 시트 3: 브랜드별 집계 (매출 내림차순)
+    const brandMap = new Map();
+    products.forEach(p => {
+      const brand = (p.brand || '').trim() || '(브랜드 미지정)';
+      const sold = p.sales || 0;
+      const entry = brandMap.get(brand) || { items: 0, qty: 0, revenue: 0 };
+      entry.items += 1;
+      entry.qty += sold;
+      entry.revenue += (p.price || 0) * sold;
+      brandMap.set(brand, entry);
+    });
+    const brandRows = Array.from(brandMap.entries())
+      .sort((a, b) => b[1].revenue - a[1].revenue)
+      .map(([brand, e], i) => [i + 1, brand, e.items, e.qty, e.revenue]);
+    const totalQty = brandRows.reduce((s, r) => s + r[3], 0);
+    const totalRev = brandRows.reduce((s, r) => s + r[4], 0);
+    const brandSheet = XLSX.utils.aoa_to_sheet([
+      ['#', '브랜드', '제품수', '총 판매수량', '총 매출액'],
+      ...brandRows,
+      ['', '합계', products.length, totalQty, totalRev],
+    ]);
+    XLSX.utils.book_append_sheet(wb, brandSheet, '브랜드별 집계');
 
     XLSX.writeFile(wb, 'live_report_' + dateStr + '.xlsx');
   };
@@ -960,6 +1333,12 @@ function App() {
         selectedProduct={selectedProduct}
         presets={announcerPresets}
         setPresets={setAnnouncerPresets}
+        quickSends={quickSends}
+        setQuickSends={setQuickSends}
+        minGapSec={minGapSec}
+        setMinGapSec={setMinGapSec}
+        productChangeAnnounce={productChangeAnnounce}
+        setProductChangeAnnounce={setProductChangeAnnounce}
       />
 
       {/* 스캐너 가이드 모달 */}
@@ -1027,7 +1406,13 @@ function App() {
         {/* COL 1: 채팅 + 자동 공지 */}
         <div className="col-span-4 flex flex-col border-r border-gray-800 min-h-0 overflow-hidden h-full">
           <ChatStream
-            messages={messages.filter(m => ['CHAT', 'INQUIRY', 'REACTION'].includes(m.intent) || !m.intent)}
+            messages={messages.filter(m => {
+              // 순수채팅모드: 시스템/선착순 안내 등 플랫폼 자동 메시지 제외 (nickname==='SYSTEM')
+              if (chatViewMode === 'PURE' && m.nickname === 'SYSTEM') return false;
+              // 집계형 참여 문구("OOO님 외 N명이 추첨에 참여했습니다." 등) 제외
+              if (m.message && AGGREGATE_PARTICIPATION_REGEX.test(m.message.trim())) return false;
+              return ['CHAT', 'INQUIRY', 'REACTION'].includes(m.intent) || !m.intent;
+            })}
             chatInput={chatInput}
             setChatInput={setChatInput}
             onSend={sendChatMessage}
@@ -1036,6 +1421,11 @@ function App() {
             announcerCountdown={announcerCountdown}
             nextMessage={nextAutoMsg}
             onOpenAnnouncerSettings={() => setIsAnnouncerModalOpen(true)}
+            quickSends={quickSends}
+            quickCountdowns={quickCountdowns}
+            onQuickSend={handleQuickSend}
+            chatViewMode={chatViewMode}
+            onToggleChatViewMode={() => setChatViewMode(v => v === 'NORMAL' ? 'PURE' : 'NORMAL')}
           />
         </div>
 
@@ -1043,6 +1433,10 @@ function App() {
           <StatsPanel
             trends={trends}
             salesLogs={salesLogs}
+            products={products}
+            onSelectProduct={handleSelectProduct}
+            trendWindow={trendWindowMin}
+            setTrendWindow={setTrendWindowMin}
             onApplyAll={handleRematchPending}
             onUpdateLogCode={handleUpdateLogCode}
             onApplySingle={(logId) => {
@@ -1133,6 +1527,7 @@ function App() {
             targetUrl={targetUrl}
             setTargetUrl={setTargetUrl}
             handleUrlUpdate={handleUrlUpdate}
+            onSaveVideoWindow={handleSaveVideoWindow}
             prompterInput={prompterInput}
             setPrompterInput={setPrompterInput}
             onSendCue={handleSendCue}

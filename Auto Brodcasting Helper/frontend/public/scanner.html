@@ -54,21 +54,36 @@
         const startBtn = document.getElementById('startBtn');
         let html5QrcodeScanner;
         
-        // 1. 단순하고 명료한 전자 삐- 소리 (AudioContext)
+        // 1. 사운드 (AudioContext)
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playTone(freq, startTime, duration) {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.value = freq;
+            gain.gain.setValueAtTime(0, startTime);
+            gain.gain.linearRampToValueAtTime(1, startTime + 0.02);
+            gain.gain.linearRampToValueAtTime(0, startTime + duration);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(startTime);
+            osc.stop(startTime + duration + 0.05);
+        }
+
+        // 성공: 삑! (1500Hz 단음)
         function playBeep() {
             if (audioCtx.state === 'suspended') audioCtx.resume();
-            const oscillator = audioCtx.createOscillator();
-            const gainNode = audioCtx.createGain();
-            oscillator.type = 'sine'; // 맑은 삐 소리
-            oscillator.frequency.value = 1500; // 1500Hz 고음
-            gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-            gainNode.gain.linearRampToValueAtTime(1, audioCtx.currentTime + 0.02);
-            gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.15); // 짧고 경쾌하게
-            oscillator.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
-            oscillator.start();
-            oscillator.stop(audioCtx.currentTime + 0.2);
+            playTone(1500, audioCtx.currentTime, 0.15);
+        }
+
+        // 미등록: 삐삑! (낮은음 → 낮은음, 두 번)
+        function playErrorBeep() {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const t = audioCtx.currentTime;
+            playTone(600, t, 0.15);
+            playTone(600, t + 0.22, 0.15);
+            if (navigator.vibrate) navigator.vibrate([100, 80, 100]);
         }
 
         // 2. PC 서버(WebSocket) 자동 연결 (프록시 통합 및 보안망 적용)
@@ -94,8 +109,15 @@
                     }
 
                     if (payload.type === 'AUTH_REQUIRED') {
-                        // 인증 화면 노출
-                        authGate.style.display = 'flex';
+                        // [자동 재인증] 화면 꺼짐/네트워크 전환으로 WS가 재연결될 때마다
+                        // 서버는 새 연결로 인식해 매번 PIN을 요구함. 이전에 성공한 PIN이
+                        // 저장돼 있으면 사람 개입 없이 자동으로 재전송해 재입력을 없앰.
+                        const savedPin = localStorage.getItem('grip_scanner_pin');
+                        if (savedPin) {
+                            ws.send(JSON.stringify({ type: 'AUTH', pin: savedPin }));
+                        } else {
+                            authGate.style.display = 'flex';
+                        }
                     }
                     if (payload.type === 'AUTH_SUCCESS') {
                         // 인증 완료 시 스캐너 메인 화면 진입
@@ -104,9 +126,31 @@
                         statusEl.innerText = "✨ 보안 접속 완료!\n'스캐너 켜기'를 누르고 바코드를 읽어주세요.";
                     }
                     if (payload.type === 'AUTH_FAILED') {
+                        // 저장된 PIN이 서버 재시작 등으로 더 이상 유효하지 않은 경우 → 삭제 후 수동 재입력 요구
+                        localStorage.removeItem('grip_scanner_pin');
+                        authGate.style.display = 'flex';
                         alert("❌ 보안 인증 실패: 비밀번호를 다시 확인하세요.");
                         pinInput.value = '';
                         pinInput.focus();
+                    }
+
+                    if (payload.type === 'SCANNER_RESULT') {
+                        const { matched, productName, code } = payload.data || {};
+                        if (matched) {
+                            statusEl.innerHTML = `✅ 등록 제품:<br><b style="font-size:1.3rem; color:#a7f3d0;">${productName}</b>`;
+                            statusEl.style.background = '#065f46';
+                            statusEl.style.color = '#a7f3d0';
+                        } else {
+                            statusEl.innerHTML = `❌ 미등록 바코드:<br><b style="font-size:1.1rem; color:#fca5a5;">${code}</b>`;
+                            statusEl.style.background = '#7f1d1d';
+                            statusEl.style.color = '#fca5a5';
+                            playErrorBeep();
+                        }
+                        setTimeout(() => {
+                            statusEl.innerText = "✨ 다음 바코드를 스캔하세요...";
+                            statusEl.style.background = '';
+                            statusEl.style.color = '';
+                        }, 2000);
                     }
                 } catch (e) {}
             };
@@ -128,6 +172,7 @@
                 return;
             }
             if (ws && ws.readyState === WebSocket.OPEN) {
+                localStorage.setItem('grip_scanner_pin', pin); // 재연결 시 자동 재인증용 저장
                 ws.send(JSON.stringify({ type: 'AUTH', pin: pin }));
             } else {
                 alert('서버와 연결되어 있지 않습니다. 잠시 후 다시 시도하세요.');
@@ -178,13 +223,11 @@
                     statusEl.className = 'status';
                 }
 
-                // 1.5초 후 다음 바코드 스캔 허용
+                // 1.5초 후 다음 바코드 스캔 허용 (상태 표시는 SCANNER_RESULT가 담당)
                 setTimeout(() => {
                     isProcessing = false;
                     lastScannedCode = null;
                     scanMatchCount = 0;
-                    statusEl.innerText = "✨ 다음 바코드를 스캔하세요...";
-                    statusEl.className = 'status';
                 }, 1500);
             }
         }

@@ -54,10 +54,9 @@ export function ProductTable({ products, onEdit, onDelete, onAdd, onUpdateProduc
                     <thead>
                         <tr className="text-[10px] text-gray-500 uppercase tracking-wider border-b border-gray-700">
                             <th className="p-2 w-28">Barcode</th>
-                            <th className="p-2 w-20">Code</th>
+                            <th className="p-2 w-24">Code</th>
                             <th className="p-2 w-24">Brand</th>
                             <th className="p-2 w-1/3">Product Name</th>
-                            <th className="p-2 w-24">Expiry</th>
                             <th className="p-2 text-right">Price</th>
                             <th className="p-2 text-right">Stock</th>
                             <th className="p-2 text-right">Sold</th>
@@ -69,7 +68,7 @@ export function ProductTable({ products, onEdit, onDelete, onAdd, onUpdateProduc
                     <tbody className="text-xs text-gray-300">
                         {products.length === 0 ? (
                             <tr>
-                                <td colSpan="11" className="text-center py-8 text-gray-600">No Products Registered</td>
+                                <td colSpan="10" className="text-center py-8 text-gray-600">No Products Registered</td>
                             </tr>
                         ) : products.map((p) => {
                             const isSelected = selectedProduct?.id
@@ -90,17 +89,20 @@ export function ProductTable({ products, onEdit, onDelete, onAdd, onUpdateProduc
                                     <td className={`p-2 font-mono ${isSelected ? 'text-yellow-200' : 'text-gray-400'}`}>
                                         <input type="text" value={p.code} onClick={(e) => e.stopPropagation()}
                                             onChange={(e) => onUpdateProduct(p.id || p.code, 'code', e.target.value)}
-                                            className="w-full bg-transparent border-b border-transparent focus:border-yellow-500 outline-none" />
+                                            className="w-full bg-transparent border-b border-transparent focus:border-yellow-500 outline-none text-sm" />
                                     </td>
                                     <td className="p-2 text-gray-400">{p.brand}</td>
                                     <td className={`p-2 font-medium ${isSelected ? 'text-yellow-100 font-bold' : 'text-white'}`}>{p.name}</td>
-                                    <td className="p-2 text-gray-500 text-[10px]">{p.expiry}</td>
                                     <td className="p-2 text-right text-gray-400">{p.price?.toLocaleString()}</td>
-                                    <td className="p-2 text-right text-gray-300">{p.stock}</td>
+                                    <td className="p-2 text-right">
+                                        <input type="number" value={p.stock} onClick={(e) => e.stopPropagation()}
+                                            onChange={(e) => onUpdateProduct(p.id || p.code, 'stock', Number(e.target.value))}
+                                            className="w-16 bg-gray-800 border border-gray-600 rounded px-1 py-0.5 text-right text-gray-300 focus:border-gray-400 outline-none" />
+                                    </td>
                                     <td className="p-2 text-right">
                                         <input type="number" value={p.sales} onClick={(e) => e.stopPropagation()}
                                             onChange={(e) => onUpdateProduct(p.id || p.code, 'sales', Number(e.target.value))}
-                                            className="w-20 bg-gray-800 border border-gray-600 rounded px-1 py-0.5 text-right text-red-300 focus:border-red-500 outline-none" />
+                                            className="w-16 bg-gray-800 border border-gray-600 rounded px-1 py-0.5 text-right text-red-300 focus:border-red-500 outline-none" />
                                     </td>
                                     <td className="p-2 text-right text-yellow-400 font-mono text-lg font-bold">
                                         {((p.sales || 0) * (p.price || 0)).toLocaleString()}
