@@ -99,7 +99,7 @@
                     selectedId = id;
                     render();
                     if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: 'SUGGEST_PRODUCT', id: product.id, name: product.name }));
+                        ws.send(JSON.stringify({ type: 'SUGGEST_PRODUCT', data: { id: product.id, name: product.name } }));
                     }
                     showFeedback(`선택됨: ${product.name}`);
                 });
@@ -127,7 +127,7 @@
                     }
                     if (payload.type === 'AUTH_SUCCESS') {
                         authGate.style.display = 'none';
-                        ws.send(JSON.stringify({ type: 'REMOTE_PICKER_READY' }));
+                        ws.send(JSON.stringify({ type: 'REMOTE_PICKER_JOINED' }));
                     }
                     if (payload.type === 'AUTH_FAILED') {
                         authGate.style.display = 'flex';
