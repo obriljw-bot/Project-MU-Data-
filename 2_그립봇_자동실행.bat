@@ -27,8 +27,8 @@ echo.
 set "PROJECT_ROOT=c:\OneBridge\apps-script\data\Project-MU-Data-"
 
 echo [1/3] Starting Backend Server...
-cd /d "%PROJECT_ROOT%\web-app"
-start "Grip Backend" cmd /c "npm run server"
+cd /d "%PROJECT_ROOT%\Auto Brodcasting Helper\backend\relay"
+start "Grip Backend" cmd /c "node ws_server.js"
 
 echo [2/3] Starting Frontend Dashboard...
 cd /d "%PROJECT_ROOT%\Auto Brodcasting Helper\frontend"
